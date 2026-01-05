@@ -1,7 +1,8 @@
 import { Decimal, toDecimal } from '../utils/decimal';
 import { ETF, Loan, StockLoan, CreditLoan, MonthlyCashFlow, StressTestRow, TaxStatus } from '../types';
-import { LoanCalculator } from './loanCalculator';
-import { TaxCalculator } from './taxCalculator';
+// ↓↓↓ 修正重點：把檔名改成大寫開頭，避免 Vercel 找不到檔案 ↓↓↓
+import { LoanCalculator } from './LoanCalculator';
+import { TaxCalculator } from './TaxCalculator';
 
 export class PortfolioCalculator {
   static generateCashFlow(
