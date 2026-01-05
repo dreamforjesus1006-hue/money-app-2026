@@ -3,15 +3,12 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { INITIAL_ETFS, INITIAL_LOANS, INITIAL_STOCK_LOAN, INITIAL_CREDIT_LOAN, INITIAL_TAX_STATUS, INITIAL_GLOBAL_MARGIN_LOAN } from './constants';
 import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AppState, Lot, CloudConfig } from './types';
 
-// ↓↓↓ 修正重點：移除 /services/ 資料夾路徑，並對照截圖的檔名大小寫 ↓↓↓
+// ↓↓↓ 修正：拿掉 /services/，並注意大小寫 (PortfolioCalculator 是大寫 P，storage 是小寫 s) ↓↓↓
 import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 // ↑↑↑ 修正結束 ↑↑↑
 
-// ↓↓↓ 修正重點：移除 /utils/ 資料夾路徑 ↓↓↓
 import { formatMoney } from './decimal';
-// ↑↑↑ 修正結束 ↑↑↑
-
 import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare } from 'lucide-react';
 import Decimal from 'decimal.js';
 
