@@ -2,8 +2,10 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine } from 'recharts';
 import { INITIAL_ETFS, INITIAL_LOANS, INITIAL_STOCK_LOAN, INITIAL_CREDIT_LOAN, INITIAL_TAX_STATUS, INITIAL_GLOBAL_MARGIN_LOAN } from './constants';
 import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AppState, Lot, CloudConfig } from './types';
+// ↓↓↓ 修正重點：改成大寫開頭，符合 Vercel (Linux) 檔案系統要求 ↓↓↓
 import { PortfolioCalculator } from './services/PortfolioCalculator';
-import { StorageService } from './services/storage';
+import { StorageService } from './services/Storage';
+// ↑↑↑ 修正結束 ↑↑↑
 import { formatMoney } from './utils/decimal';
 import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare } from 'lucide-react';
 import Decimal from 'decimal.js';
@@ -522,11 +524,11 @@ const App: React.FC = () => {
              </p>
              <div className="flex gap-2">
                 <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">
-                    {saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}
-                    {saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}
-                    {saveStatus === 'error' && <><AlertTriangle className="w-3 h-3 text-red-400" /><span className="text-red-400">同步失敗</span></>}
-                    {saveStatus === 'idle' && dataSource === 'cloud' && <><Globe className="w-3 h-3 text-blue-400" /><span className="text-blue-400">雲端模式</span></>}
-                    {saveStatus === 'idle' && dataSource !== 'cloud' && <><HardDrive className="w-3 h-3 text-slate-500" /><span className="text-slate-500">本機模式</span></>}
+                   {saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}
+                   {saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}
+                   {saveStatus === 'error' && <><AlertTriangle className="w-3 h-3 text-red-400" /><span className="text-red-400">同步失敗</span></>}
+                   {saveStatus === 'idle' && dataSource === 'cloud' && <><Globe className="w-3 h-3 text-blue-400" /><span className="text-blue-400">雲端模式</span></>}
+                   {saveStatus === 'idle' && dataSource !== 'cloud' && <><HardDrive className="w-3 h-3 text-slate-500" /><span className="text-slate-500">本機模式</span></>}
                 </div>
                 {dataSource === 'local' && (
                   <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">
