@@ -1,4 +1,6 @@
-import { AppState, CloudConfig } from '../types';
+// ↓↓↓ 修正：改成 ./types (同層目錄) ↓↓↓
+import { AppState, CloudConfig } from './types';
+// ↑↑↑ 修正結束 ↑↑↑
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 
