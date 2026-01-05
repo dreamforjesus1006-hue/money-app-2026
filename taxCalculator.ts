@@ -1,5 +1,7 @@
-import { Decimal, toDecimal } from '../utils/decimal';
-import { TaxStatus, ETF } from '../types';
+// ↓↓↓ 修正重點：改成同層目錄 ./decimal 和 ./types ↓↓↓
+import { Decimal, toDecimal } from './decimal';
+import { TaxStatus, ETF } from './types';
+// ↑↑↑ 修正結束 ↑↑↑
 
 // 2025 Parameters (2024 Income)
 const TAX_PARAMS = {
