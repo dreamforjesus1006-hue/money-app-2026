@@ -1,8 +1,9 @@
-// ↓↓↓ 修正：全部改成 ./ 開頭，因為大家都在同一層 ↓↓↓
+// ↓↓↓ 修正：全部改成 ./ 開頭 ↓↓↓
 import { Decimal, toDecimal } from './decimal';
 import { ETF, Loan, StockLoan, CreditLoan, MonthlyCashFlow, StressTestRow, TaxStatus } from './types';
-import { LoanCalculator } from './loanCalculator'; // 注意：這是小寫 l 開頭的檔名
-import { TaxCalculator } from './taxCalculator';   // 注意：這是小寫 t 開頭的檔名
+// ↓↓↓ 修正重點：檔名要改回小寫 l 和 t，對應你的檔案列表 ↓↓↓
+import { LoanCalculator } from './loanCalculator';
+import { TaxCalculator } from './taxCalculator';
 // ↑↑↑ 修正結束 ↑↑↑
 
 export class PortfolioCalculator {
