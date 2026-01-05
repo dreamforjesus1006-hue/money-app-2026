@@ -1,10 +1,9 @@
-import { Decimal, toDecimal } from '../utils/decimal';
-import { Loan, MortgageType, CreditLoan } from '../types';
+// ↓↓↓ 修正：全部改成 ./ 開頭 ↓↓↓
+import { Decimal, toDecimal } from './decimal';
+import { Loan, MortgageType, CreditLoan } from './types';
+// ↑↑↑ 修正結束 ↑↑↑
 
 export class LoanCalculator {
-  /**
-   * Calculate monthly payment for the *current* state of the loan.
-   */
   static calculateMonthlyPayment(loan: Loan): Decimal {
     const P = toDecimal(loan.principal);
     const N = toDecimal(loan.totalMonths);
@@ -38,10 +37,6 @@ export class LoanCalculator {
     }
   }
 
-  /**
-   * Calculate Personal Credit Loan Payment (Standard P&I)
-   * 信貸通常是本利攤還
-   */
   static calculateCreditLoanPayment(loan: CreditLoan): Decimal {
     if (loan.principal <= 0) return toDecimal(0);
     
