@@ -24,7 +24,14 @@ const App: React.FC = () => {
   const [dataSource, setDataSource] = useState<'local' | 'cloud' | 'gas'>('local');
 
   // Cloud Config State
-  const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ apiKey: '', projectId: '', syncId: '', enabled: false });
+  // ↓↓↓ 修正：直接把資料填在這裡，這樣就永遠不用輸入了 ↓↓↓
+const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ 
+  apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
+  projectId: 'baozutang-finance', 
+  syncId: 'tony1006', 
+  enabled: true 
+});
+// ↑↑↑ 修正結束 ↑↑↑
   const [pastedConfig, setPastedConfig] = useState('');
 
   // Data States
