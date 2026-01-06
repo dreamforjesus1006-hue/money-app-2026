@@ -3,13 +3,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { INITIAL_ETFS, INITIAL_LOANS, INITIAL_STOCK_LOAN, INITIAL_CREDIT_LOAN, INITIAL_TAX_STATUS, INITIAL_GLOBAL_MARGIN_LOAN } from './constants';
 import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AppState, Lot, CloudConfig } from './types';
 
-// ↓↓↓ 修正：拿掉 /services/，並注意大小寫 (PortfolioCalculator 是大寫 P，storage 是小寫 s) ↓↓↓
 import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
-// ↑↑↑ 修正結束 ↑↑↑
-
 import { formatMoney } from './decimal';
-import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare } from 'lucide-react';
+
+import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3 } from 'lucide-react';
 import Decimal from 'decimal.js';
 
 const BROKERAGE_RATE = 0.001425; // 0.1425% standard TW rate
@@ -23,15 +21,13 @@ const App: React.FC = () => {
   const [storageStats, setStorageStats] = useState({ used: 0, total: 5242880 });
   const [dataSource, setDataSource] = useState<'local' | 'cloud' | 'gas'>('local');
 
-  // Cloud Config State
-  // ↓↓↓ 修正：直接把資料填在這裡，這樣就永遠不用輸入了 ↓↓↓
-const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ 
-  apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
-  projectId: 'baozutang-finance', 
-  syncId: 'tony1006', 
-  enabled: true 
-});
-// ↑↑↑ 修正結束 ↑↑↑
+  // Cloud Config State (填入您的 Firebase 資訊)
+  const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ 
+    apiKey: '您的_API_KEY_貼在這裡', 
+    projectId: 'baozutang-finance', 
+    syncId: 'tony1006', 
+    enabled: true 
+  });
   const [pastedConfig, setPastedConfig] = useState('');
 
   // Data States
@@ -66,7 +62,14 @@ const [cloudConfig, setCloudConfig] = useState<CloudConfig>({
 
         if (loadedState) {
           setEtfs(loadedState.etfs || INITIAL_ETFS);
-          setLoans(loadedState.loans || INITIAL_LOANS);
+          
+          // 自動補上缺少的房貸 (雙房貸修正)
+          let mergedLoans = loadedState.loans || INITIAL_LOANS;
+          if (mergedLoans.length < INITIAL_LOANS.length) {
+             mergedLoans = [...mergedLoans, INITIAL_LOANS[1]];
+          }
+          setLoans(mergedLoans);
+
           setStockLoan(loadedState.stockLoan || INITIAL_STOCK_LOAN);
           setGlobalMarginLoan(loadedState.globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
           setCreditLoan(loadedState.creditLoan || INITIAL_CREDIT_LOAN);
@@ -81,7 +84,6 @@ const [cloudConfig, setCloudConfig] = useState<CloudConfig>({
         if (localData) {
             setEtfs(localData.etfs || INITIAL_ETFS);
             setLoans(localData.loans || INITIAL_LOANS);
-            // ... load other parts
         }
       } finally {
         setIsInitializing(false);
@@ -112,18 +114,16 @@ const [cloudConfig, setCloudConfig] = useState<CloudConfig>({
     }, 1000); // 1 second delay
 
     return () => clearTimeout(timer);
-  }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, isInitializing, cloudConfig]); // Add cloudConfig dependency to save when config changes
+  }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, isInitializing, cloudConfig]);
 
  const saveCloudSettings = () => {
     StorageService.saveCloudConfig(cloudConfig);
-    // 不要自動重整，改用 alert 通知
     alert("設定已儲存！請手動關閉此視窗，並重新整理頁面以啟用雲端功能。");
-    setShowSettings(false); // 順便幫你關掉設定視窗
+    setShowSettings(false);
   };
 
   const parsePastedConfig = (text: string) => {
     setPastedConfig(text);
-    // Basic regex to find apiKey and projectId in standard JS/JSON objects
     const apiKeyMatch = text.match(/apiKey:\s*["']([^"']+)["']/);
     const projectIdMatch = text.match(/projectId:\s*["']([^"']+)["']/);
 
@@ -179,6 +179,31 @@ const [cloudConfig, setCloudConfig] = useState<CloudConfig>({
     const newEtfs = [...etfs];
     newEtfs[index] = { ...newEtfs[index], [field]: value };
     setEtfs(newEtfs);
+  };
+
+  // --- NEW: Add ETF Function ---
+  const addEtf = () => {
+    const newEtf: ETF = {
+        id: Date.now().toString(),
+        name: '自選標的 (請改名)',
+        shares: 0,
+        costPrice: 0,
+        currentPrice: 0,
+        dividendPerShare: 0,
+        dividendType: 'annual',
+        payMonths: [],
+        marginLoanAmount: 0,
+        marginInterestRate: 0,
+        lots: []
+    };
+    setEtfs([...etfs, newEtf]);
+  };
+
+  // --- NEW: Remove ETF Function ---
+  const removeEtf = (id: string) => {
+    if (window.confirm('確定要刪除這個投資標的嗎？所有的交易紀錄也會一起消失喔！')) {
+        setEtfs(etfs.filter(e => e.id !== id));
+    }
   };
 
   const toggleEtfDividendType = (index: number) => {
@@ -358,7 +383,6 @@ const [cloudConfig, setCloudConfig] = useState<CloudConfig>({
       setGlobalMarginLoan(INITIAL_GLOBAL_MARGIN_LOAN);
       setCreditLoan(INITIAL_CREDIT_LOAN);
       setTaxStatus(INITIAL_TAX_STATUS);
-      // Trigger save immediately to reset storage
       setTimeout(() => {
          StorageService.saveData({ etfs: INITIAL_ETFS, loans: INITIAL_LOANS, stockLoan: INITIAL_STOCK_LOAN, globalMarginLoan: INITIAL_GLOBAL_MARGIN_LOAN, creditLoan: INITIAL_CREDIT_LOAN, taxStatus: INITIAL_TAX_STATUS });
          setStorageStats(StorageService.getStorageUsage());
@@ -576,13 +600,23 @@ const [cloudConfig, setCloudConfig] = useState<CloudConfig>({
                 return (
                   <div key={etf.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-900/20 hover:border-emerald-500/50 group">
                     <div className="flex justify-between items-center mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white group-hover:text-emerald-300 transition-colors">{etf.name}</span>
+                      <div className="flex items-center gap-2 flex-1">
+                        {/* 修正：可編輯的標的名稱 */}
+                        <div className="relative group/edit">
+                            <input 
+                                type="text" 
+                                value={etf.name} 
+                                onChange={(e) => updateEtf(idx, 'name', e.target.value)} 
+                                className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-500 focus:border-emerald-500 outline-none w-32 md:w-40 transition-all focus:bg-slate-800/50 px-1 rounded" 
+                            />
+                            <Edit3 className="w-3 h-3 text-slate-600 absolute -right-4 top-1.5 opacity-0 group-hover/edit:opacity-100 transition-opacity pointer-events-none" />
+                        </div>
                         {hasLots && <span className="text-[10px] bg-blue-900 text-blue-200 px-1.5 py-0.5 rounded">自動計算</span>}
                       </div>
                       <div className="flex gap-1">
                         <button onClick={() => toggleBuy(etf.id)} className={`text-xs flex items-center gap-1 px-2 py-1 rounded-lg border transition-colors ${isBuying ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-emerald-400 hover:bg-slate-700'}`}><ShoppingCart className="w-3 h-3" /> 買入</button>
                         <button onClick={() => toggleLots(etf.id)} className={`text-xs flex items-center gap-1 px-2 py-1 rounded-lg border transition-colors ${hasLots ? 'bg-slate-700 border-slate-500 text-slate-300' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}><List className="w-3 h-3" /> {isExpanded ? '隱藏' : '明細'}</button>
+                        <button onClick={() => removeEtf(etf.id)} className="text-xs px-2 py-1 rounded-lg border border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-900 hover:bg-red-900/10 transition-colors" title="刪除此標的"><Trash2 className="w-3 h-3" /></button>
                       </div>
                     </div>
 
@@ -645,6 +679,12 @@ const [cloudConfig, setCloudConfig] = useState<CloudConfig>({
                   </div>
                 );
               })}
+              
+              {/* 新增按鈕區塊 */}
+              <button onClick={addEtf} className="w-full py-3 bg-slate-800 border-2 border-dashed border-slate-700 rounded-xl text-slate-400 hover:text-white hover:border-emerald-500 hover:bg-slate-800/80 transition-all flex items-center justify-center gap-2 group">
+                  <div className="bg-slate-700 group-hover:bg-emerald-600 rounded-full p-1 transition-colors"><Plus className="w-4 h-4 text-white" /></div>
+                  <span className="font-bold">新增自選投資標的</span>
+              </button>
             </div>
           </section>
 
