@@ -1,16 +1,30 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell, Sector } from 'recharts';
 import { INITIAL_ETFS, INITIAL_LOANS, INITIAL_STOCK_LOAN, INITIAL_CREDIT_LOAN, INITIAL_TAX_STATUS, INITIAL_GLOBAL_MARGIN_LOAN, INITIAL_ALLOCATION } from './constants';
-import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AppState, Lot, CloudConfig, AllocationConfig } from './types';
+import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AppState, Lot, CloudConfig, AllocationConfig, EtfCategory } from './types';
 
 import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 
-import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon } from 'lucide-react';
+import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb } from 'lucide-react';
 import Decimal from 'decimal.js';
 
-const BROKERAGE_RATE = 0.001425; // 0.1425% standard TW rate
+const BROKERAGE_RATE = 0.001425; 
+
+// Colors for Pie Chart
+const COLORS = {
+  dividend: '#10b981', // Emerald
+  hedging: '#f59e0b',  // Amber
+  active: '#a855f7',   // Purple
+  cash: '#334155'      // Slate (Unallocated)
+};
+
+const CATEGORY_NAMES = {
+  dividend: '配息型',
+  hedging: '避險型',
+  active: '主動型'
+};
 
 const App: React.FC = () => {
   // Loading States
@@ -21,7 +35,7 @@ const App: React.FC = () => {
   const [storageStats, setStorageStats] = useState({ used: 0, total: 5242880 });
   const [dataSource, setDataSource] = useState<'local' | 'cloud' | 'gas'>('local');
 
-  // Cloud Config State (您的專屬設定)
+  // Cloud Config State
   const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ 
     apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
     projectId: 'baozutang-finance', 
@@ -37,9 +51,7 @@ const App: React.FC = () => {
   const [globalMarginLoan, setGlobalMarginLoan] = useState<StockLoan>(INITIAL_GLOBAL_MARGIN_LOAN);
   const [creditLoan, setCreditLoan] = useState<CreditLoan>(INITIAL_CREDIT_LOAN);
   const [taxStatus, setTaxStatus] = useState<TaxStatus>(INITIAL_TAX_STATUS);
-  // ↓↓↓ 新增：資金分配狀態 ↓↓↓
   const [allocation, setAllocation] = useState<AllocationConfig>(INITIAL_ALLOCATION);
-  // ↑↑↑ 新增結束 ↑↑↑
   
   // UI State
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
@@ -63,7 +75,13 @@ const App: React.FC = () => {
         setDataSource(result.source);
 
         if (loadedState) {
-          setEtfs(loadedState.etfs || INITIAL_ETFS);
+          // Initialize ETFs and ensure category exists
+          const loadedEtfs = loadedState.etfs || INITIAL_ETFS;
+          const sanitizedEtfs = loadedEtfs.map(e => ({
+             ...e,
+             category: e.category || 'dividend' // Default to dividend if missing
+          }));
+          setEtfs(sanitizedEtfs);
           
           let mergedLoans = loadedState.loans || INITIAL_LOANS;
           if (mergedLoans.length < INITIAL_LOANS.length) {
@@ -75,7 +93,6 @@ const App: React.FC = () => {
           setGlobalMarginLoan(loadedState.globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
           setCreditLoan(loadedState.creditLoan || INITIAL_CREDIT_LOAN);
           setTaxStatus(loadedState.taxStatus || INITIAL_TAX_STATUS);
-          // ↓↓↓ 載入分配設定 ↓↓↓
           setAllocation(loadedState.allocation || INITIAL_ALLOCATION);
         }
         setStorageStats(StorageService.getStorageUsage());
@@ -99,7 +116,6 @@ const App: React.FC = () => {
     if (isInitializing) return;
 
     setSaveStatus('saving');
-    // ↓↓↓ 儲存分配設定 ↓↓↓
     const currentState: AppState = { etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation };
     
     const timer = setTimeout(async () => {
@@ -175,13 +191,60 @@ const App: React.FC = () => {
      return (totalMarketValue / totalStockDebt) * 100;
   }, [totalMarketValue, totalStockDebt]);
 
-  // Allocation Calculations
+  // --- Allocation Logic (Goal vs Reality) ---
   const allocationSum = allocation.dividendRatio + allocation.hedgingRatio + allocation.activeRatio;
   const isAllocationValid = allocationSum === 100;
   
-  const dividendAmount = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
-  const hedgingAmount = Math.floor(allocation.totalFunds * (allocation.hedgingRatio / 100));
-  const activeAmount = Math.floor(allocation.totalFunds * (allocation.activeRatio / 100));
+  // Targets
+  const targetDividend = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
+  const targetHedging = Math.floor(allocation.totalFunds * (allocation.hedgingRatio / 100));
+  const targetActive = Math.floor(allocation.totalFunds * (allocation.activeRatio / 100));
+
+  // Actuals
+  const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+
+  const pieData = [
+    { name: '配息型', value: actualDividend, color: COLORS.dividend },
+    { name: '避險型', value: actualHedging, color: COLORS.hedging },
+    { name: '主動型', value: actualActive, color: COLORS.active },
+  ].filter(d => d.value > 0);
+
+  // --- Breakeven Logic (Investment Tip) ---
+  const breakevenTip = useMemo(() => {
+      if (yearlyNetPosition.gte(0)) return null; // No problem
+
+      const deficit = yearlyNetPosition.abs().toNumber();
+      
+      // Calculate avg dividend yield of 'dividend' category
+      const divEtfs = etfs.filter(e => e.category === 'dividend' && e.shares > 0);
+      let totalInvested = 0;
+      let totalDiv = 0;
+      
+      divEtfs.forEach(e => {
+          const mkt = e.shares * e.currentPrice;
+          let annualDiv = 0;
+          if (e.dividendType === 'per_period') {
+              annualDiv = e.dividendPerShare * e.payMonths.length * e.shares;
+          } else {
+              // rough estimate for annual
+              annualDiv = e.dividendPerShare * e.shares; 
+          }
+          totalInvested += mkt;
+          totalDiv += annualDiv;
+      });
+
+      const avgYield = totalInvested > 0 ? totalDiv / totalInvested : 0.06; // Default to 6% if no data
+      const neededCapital = deficit / avgYield;
+
+      return {
+          deficit,
+          avgYield: (avgYield * 100).toFixed(1),
+          neededCapital
+      };
+  }, [yearlyNetPosition, etfs]);
+
 
   // Handlers
   const updateEtf = (index: number, field: keyof ETF, value: any) => {
@@ -193,7 +256,7 @@ const App: React.FC = () => {
   const addEtf = () => {
     const newEtf: ETF = {
         id: Date.now().toString(),
-        name: '自選標的 (請改名)',
+        name: '自選標的',
         shares: 0,
         costPrice: 0,
         currentPrice: 0,
@@ -202,7 +265,8 @@ const App: React.FC = () => {
         payMonths: [],
         marginLoanAmount: 0,
         marginInterestRate: 0,
-        lots: []
+        lots: [],
+        category: 'dividend' // Default
     };
     setEtfs([...etfs, newEtf]);
   };
@@ -362,7 +426,8 @@ const App: React.FC = () => {
         const state = JSON.parse(json) as AppState;
         
         if (state.etfs && state.loans) {
-           setEtfs(state.etfs);
+           const loadedEtfs = state.etfs.map(e => ({...e, category: e.category || 'dividend'}));
+           setEtfs(loadedEtfs);
            setLoans(state.loans);
            setStockLoan(state.stockLoan || INITIAL_STOCK_LOAN);
            setGlobalMarginLoan(state.globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
@@ -437,7 +502,6 @@ const App: React.FC = () => {
                  <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                 {/* ... (Settings content simplified for brevity, assume same as before) ... */}
                   <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 text-xs">
                      <p className="text-emerald-300 font-bold mb-1">您的帳戶已設定完成</p>
                      <p className="text-slate-400">此版本已綁定您的專屬資料庫，無需額外設定。</p>
@@ -450,7 +514,21 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* ... Help Modal (Keep existing) ... */}
+      {/* Help Modal */}
+      {showHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+           {/* ... Help Content ... */}
+           <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-xl p-6">
+              <h3 className="text-xl font-bold mb-4">功能說明</h3>
+              <ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm">
+                 <li><strong>資金分配規劃：</strong> 設定您的理想比例，系統會自動比對下方的實際持倉，計算達成率。</li>
+                 <li><strong>資產標籤：</strong> 在每檔 ETF 卡片上，可以選擇它是「配息型」、「避險型」或「主動型」。</li>
+                 <li><strong>自動補水建議：</strong> 如果年度現金流為負，系統會根據您目前的平均殖利率，計算出還需要投入多少本金才能轉正。</li>
+              </ul>
+              <button onClick={() => setShowHelp(false)} className="mt-4 w-full py-2 bg-slate-700 rounded hover:bg-slate-600">關閉</button>
+           </div>
+        </div>
+      )}
 
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -475,6 +553,7 @@ const App: React.FC = () => {
         <div className="flex flex-wrap gap-2">
            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
            <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Settings className="w-4 h-4 text-blue-400" /> 設定</button>
+           <button onClick={() => setShowHelp(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><HelpCircle className="w-4 h-4 text-amber-400" /> 說明</button>
            <button onClick={handleImportClick} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Upload className="w-4 h-4 text-blue-400" /> 匯入</button>
            <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Download className="w-4 h-4 text-emerald-400" /> 匯出</button>
            <button onClick={handleReset} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-red-900/30 border border-slate-600 hover:border-red-500 rounded-lg text-sm transition-all shadow-sm hover:shadow-md group"><RotateCcw className="w-4 h-4 text-red-400 group-hover:rotate-180 transition-transform duration-500" /> 重置</button>
@@ -484,11 +563,11 @@ const App: React.FC = () => {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         <div className="xl:col-span-4 space-y-6">
           
-          {/* ↓↓↓ 新增：資金分配區塊 ↓↓↓ */}
+          {/* Allocation Section (Enhanced) */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-blue-500 to-purple-500"></div>
+             <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-emerald-500 to-purple-500"></div>
              <h2 className="text-xl font-semibold mb-4 text-blue-300 flex items-center gap-2">
-               <PieIcon className="w-5 h-5" /> 資金分配規劃
+               <PieIcon className="w-5 h-5" /> 資金分配規劃 (目標 vs 現實)
              </h2>
              
              <div className="mb-4">
@@ -505,75 +584,100 @@ const App: React.FC = () => {
                </div>
              </div>
 
-             <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/50">
-               <div className="flex justify-between items-end mb-2">
-                 <span className="text-xs text-slate-400">比例設定 (%)</span>
-                 {!isAllocationValid && <span className="text-xs text-red-400 font-bold flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> 目前總和: {allocationSum}% (請調整至 100%)</span>}
-                 {isAllocationValid && <span className="text-xs text-emerald-400 font-bold flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 設定完美</span>}
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+               {/* Pie Chart */}
+               <div className="h-40 flex justify-center items-center bg-slate-900/30 rounded-xl">
+                  {pieData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={35}
+                          outerRadius={55}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {pieData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                            formatter={(value: number) => formatMoney(value)}
+                            contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="text-xs text-slate-500">尚無持倉數據</div>
+                  )}
                </div>
-               
-               <div className="space-y-3">
-                 {/* 配息 */}
-                 <div className="flex items-center gap-3">
-                    <div className="w-16 text-xs text-emerald-300 font-bold">配息型</div>
-                    <input 
-                      type="number" 
-                      value={allocation.dividendRatio} 
-                      onChange={(e) => setAllocation({...allocation, dividendRatio: Number(e.target.value)})}
-                      className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm font-bold"
-                    />
-                    <div className="flex-1">
-                      <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500" style={{width: `${Math.min(100, allocation.dividendRatio)}%`}}></div>
-                      </div>
+
+               {/* Allocation Bars */}
+               <div className="space-y-3 bg-slate-900/50 rounded-xl p-3 border border-slate-700/50">
+                 {/* Dividend */}
+                 <div>
+                    <div className="flex justify-between text-xs mb-1">
+                        <span className="text-emerald-300 font-bold">配息型</span>
+                        <input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-emerald-500 outline-none" />
                     </div>
-                    <div className="w-24 text-right text-sm font-mono text-emerald-400">{formatMoney(dividendAmount)}</div>
+                    <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1">
+                        <div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div>
+                        <div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend / allocation.totalFunds) * 100)}%`}}></div>
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                        <span className="text-slate-400">實: {formatMoney(actualDividend)}</span>
+                        <span className={`font-mono ${actualDividend < targetDividend ? 'text-red-400' : 'text-emerald-400'}`}>
+                           {actualDividend < targetDividend ? `缺 ${formatMoney(targetDividend - actualDividend)}` : '已達標'}
+                        </span>
+                    </div>
                  </div>
 
-                 {/* 避險 */}
-                 <div className="flex items-center gap-3">
-                    <div className="w-16 text-xs text-amber-300 font-bold">避險型</div>
-                    <input 
-                      type="number" 
-                      value={allocation.hedgingRatio} 
-                      onChange={(e) => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})}
-                      className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm font-bold"
-                    />
-                    <div className="flex-1">
-                      <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-amber-500" style={{width: `${Math.min(100, allocation.hedgingRatio)}%`}}></div>
-                      </div>
+                 {/* Hedging */}
+                 <div>
+                    <div className="flex justify-between text-xs mb-1">
+                        <span className="text-amber-300 font-bold">避險型</span>
+                        <input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-amber-500 outline-none" />
                     </div>
-                    <div className="w-24 text-right text-sm font-mono text-amber-400">{formatMoney(hedgingAmount)}</div>
+                    <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1">
+                        <div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div>
+                        <div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging / allocation.totalFunds) * 100)}%`}}></div>
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                        <span className="text-slate-400">實: {formatMoney(actualHedging)}</span>
+                        <span className={`font-mono ${actualHedging < targetHedging ? 'text-red-400' : 'text-emerald-400'}`}>
+                           {actualHedging < targetHedging ? `缺 ${formatMoney(targetHedging - actualHedging)}` : '已達標'}
+                        </span>
+                    </div>
                  </div>
 
-                 {/* 主動 */}
-                 <div className="flex items-center gap-3">
-                    <div className="w-16 text-xs text-purple-300 font-bold">主動型</div>
-                    <input 
-                      type="number" 
-                      value={allocation.activeRatio} 
-                      onChange={(e) => setAllocation({...allocation, activeRatio: Number(e.target.value)})}
-                      className="w-16 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-center text-sm font-bold"
-                    />
-                    <div className="flex-1">
-                      <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-purple-500" style={{width: `${Math.min(100, allocation.activeRatio)}%`}}></div>
-                      </div>
+                  {/* Active */}
+                 <div>
+                    <div className="flex justify-between text-xs mb-1">
+                        <span className="text-purple-300 font-bold">主動型</span>
+                        <input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-purple-500 outline-none" />
                     </div>
-                    <div className="w-24 text-right text-sm font-mono text-purple-400">{formatMoney(activeAmount)}</div>
+                    <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1">
+                        <div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div>
+                        <div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive / allocation.totalFunds) * 100)}%`}}></div>
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                        <span className="text-slate-400">實: {formatMoney(actualActive)}</span>
+                        <span className={`font-mono ${actualActive < targetActive ? 'text-red-400' : 'text-emerald-400'}`}>
+                           {actualActive < targetActive ? `缺 ${formatMoney(targetActive - actualActive)}` : '已達標'}
+                        </span>
+                    </div>
                  </div>
                </div>
              </div>
           </section>
-          {/* ↑↑↑ 資金分配區塊結束 ↑↑↑ */}
 
-          {/* ETF Input (Keep existing) */}
+          {/* ETF Input */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-emerald-300 flex items-center gap-2">
               <Activity className="w-5 h-5" /> 資產配置 (ETF)
             </h2>
-             {/* ... (Existing ETF list code) ... */}
              <div className="space-y-4">
               {etfs.map((etf, idx) => {
                 const hasLots = etf.lots && etf.lots.length > 0;
@@ -585,25 +689,39 @@ const App: React.FC = () => {
                   <div key={etf.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-900/20 hover:border-emerald-500/50 group">
                     <div className="flex justify-between items-center mb-2">
                       <div className="flex items-center gap-2 flex-1">
-                        {/* 修正：可編輯的標的名稱 */}
+                        {/* Name Input */}
                         <div className="relative group/edit">
                             <input 
                                 type="text" 
                                 value={etf.name} 
                                 onChange={(e) => updateEtf(idx, 'name', e.target.value)} 
-                                className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-500 focus:border-emerald-500 outline-none w-32 md:w-40 transition-all focus:bg-slate-800/50 px-1 rounded" 
+                                className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-500 focus:border-emerald-500 outline-none w-28 md:w-36 transition-all focus:bg-slate-800/50 px-1 rounded" 
                             />
                             <Edit3 className="w-3 h-3 text-slate-600 absolute -right-4 top-1.5 opacity-0 group-hover/edit:opacity-100 transition-opacity pointer-events-none" />
                         </div>
-                        {hasLots && <span className="text-[10px] bg-blue-900 text-blue-200 px-1.5 py-0.5 rounded">自動計算</span>}
+                        
+                        {/* Category Selector */}
+                        <select 
+                            value={etf.category || 'dividend'} 
+                            onChange={(e) => updateEtf(idx, 'category', e.target.value)}
+                            className={`text-[10px] px-1 py-0.5 rounded border outline-none cursor-pointer appearance-none
+                                ${etf.category === 'dividend' ? 'bg-emerald-900/30 text-emerald-300 border-emerald-500/30' : 
+                                  etf.category === 'hedging' ? 'bg-amber-900/30 text-amber-300 border-amber-500/30' : 
+                                  'bg-purple-900/30 text-purple-300 border-purple-500/30'}`}
+                        >
+                            <option value="dividend" className="bg-slate-800 text-emerald-400">配息型</option>
+                            <option value="hedging" className="bg-slate-800 text-amber-400">避險型</option>
+                            <option value="active" className="bg-slate-800 text-purple-400">主動型</option>
+                        </select>
                       </div>
+                      
                       <div className="flex gap-1">
                         <button onClick={() => toggleBuy(etf.id)} className={`text-xs flex items-center gap-1 px-2 py-1 rounded-lg border transition-colors ${isBuying ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-600 text-emerald-400 hover:bg-slate-700'}`}><ShoppingCart className="w-3 h-3" /> 買入</button>
                         <button onClick={() => toggleLots(etf.id)} className={`text-xs flex items-center gap-1 px-2 py-1 rounded-lg border transition-colors ${hasLots ? 'bg-slate-700 border-slate-500 text-slate-300' : 'border-slate-700 text-slate-400 hover:bg-slate-800'}`}><List className="w-3 h-3" /> {isExpanded ? '隱藏' : '明細'}</button>
-                        <button onClick={() => removeEtf(etf.id)} className="text-xs px-2 py-1 rounded-lg border border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-900 hover:bg-red-900/10 transition-colors" title="刪除此標的"><Trash2 className="w-3 h-3" /></button>
+                        <button onClick={() => removeEtf(etf.id)} className="text-xs px-2 py-1 rounded-lg border border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-900 hover:bg-red-900/10 transition-colors"><Trash2 className="w-3 h-3" /></button>
                       </div>
                     </div>
-
+                    {/* ... (Keep existing Buying / Lots / Input logic) ... */}
                     {isBuying && (
                       <div className="mb-3 p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-xl animate-in fade-in slide-in-from-top-2">
                           <h4 className="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-2"><ShoppingCart className="w-3 h-3" /> 新增買入紀錄</h4>
@@ -612,7 +730,7 @@ const App: React.FC = () => {
                             <div><label className="text-[10px] text-slate-400 block mb-1">股數</label><input type="number" placeholder="0" value={buyForm.shares} onChange={e => setBuyForm({...buyForm, shares: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white" /></div>
                             <div><label className="text-[10px] text-slate-400 block mb-1">單價</label><input type="number" placeholder="0" value={buyForm.price} onChange={e => setBuyForm({...buyForm, price: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white" /></div>
                           </div>
-                          <button onClick={() => submitBuy(idx)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded-lg text-xs flex items-center justify-center gap-2 transition-colors font-bold"><CheckCircle2 className="w-3 h-3" /> 確認買入 (自動計算手續費)</button>
+                          <button onClick={() => submitBuy(idx)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded-lg text-xs flex items-center justify-center gap-2 transition-colors font-bold"><CheckCircle2 className="w-3 h-3" /> 確認買入</button>
                       </div>
                     )}
                     
@@ -664,7 +782,6 @@ const App: React.FC = () => {
                 );
               })}
               
-              {/* 新增按鈕區塊 */}
               <button onClick={addEtf} className="w-full py-3 bg-slate-800 border-2 border-dashed border-slate-700 rounded-xl text-slate-400 hover:text-white hover:border-emerald-500 hover:bg-slate-800/80 transition-all flex items-center justify-center gap-2 group">
                   <div className="bg-slate-700 group-hover:bg-emerald-600 rounded-full p-1 transition-colors"><Plus className="w-4 h-4 text-white" /></div>
                   <span className="font-bold">新增自選投資標的</span>
@@ -726,7 +843,8 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* Credit Loan Section */}
+          {/* ... Credit / Margin / Collateral / Tax Sections (Keep existing) ... */}
+           {/* Credit Loan Section */}
            <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-orange-300 flex items-center gap-2"><Banknote className="w-5 h-5" /> 信用貸款 (本利攤還)</h2>
             <div className="p-4 bg-slate-900 rounded-xl border border-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-orange-900/20 hover:border-orange-500/50">
@@ -779,6 +897,7 @@ const App: React.FC = () => {
                 </div>
             </div>
            </section>
+
         </div>
 
         {/* OUTPUT SECTION */}
@@ -804,6 +923,21 @@ const App: React.FC = () => {
               <div className="text-xs text-slate-500 mt-1">健保: {formatMoney(healthInsuranceTotal)} | 稅: {formatMoney(incomeTaxTotal)}</div>
             </div>
           </div>
+          
+          {/* Investment Tip (Breakeven) */}
+          {breakevenTip && (
+             <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-start gap-4 shadow-lg animate-in fade-in slide-in-from-bottom-2">
+                 <div className="bg-yellow-500/20 p-2 rounded-full"><Lightbulb className="w-6 h-6 text-yellow-400" /></div>
+                 <div>
+                     <h4 className="font-bold text-white mb-1">現金流優化建議 (轉虧為盈)</h4>
+                     <p className="text-sm text-slate-400 leading-relaxed">
+                         目前年度現金流短缺 <span className="text-red-400 font-bold">{formatMoney(breakevenTip.deficit)}</span>。
+                         以您目前配息型標的平均殖利率 <span className="text-emerald-400 font-bold">{breakevenTip.avgYield}%</span> 計算，
+                         建議再投入本金約 <span className="text-blue-400 font-bold text-lg">{formatMoney(breakevenTip.neededCapital)}</span> 即可達成現金流平衡。
+                     </p>
+                 </div>
+             </div>
+          )}
 
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg">
              <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Activity className="w-5 h-5 text-emerald-400" /> 現金流儲水池</h3>
