@@ -1,4 +1,4 @@
-import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType } from './types';
+import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AllocationConfig } from './types';
 
 export const INITIAL_ETFS: ETF[] = [
   { 
@@ -39,7 +39,6 @@ export const INITIAL_ETFS: ETF[] = [
   },
 ];
 
-// ↓↓↓ 修改重點：這裡現在有兩筆房貸了 ↓↓↓
 export const INITIAL_LOANS: Loan[] = [
   {
     id: 'loan-1',
@@ -52,33 +51,32 @@ export const INITIAL_LOANS: Loan[] = [
     rate2: 1.775,
     gracePeriod: 60, // 5年寬限
     type: MortgageType.PrincipalAndInterest,
-    startDate: '2025-12-01' // 預設日期
+    startDate: '2025-12-01' 
   },
   {
     id: 'loan-2',
-    name: '理財型房貸', // 第二筆
-    principal: 0,     // 預設 0，你可以進 APP 再改
-    totalMonths: 360, // 30年
+    name: '理財型房貸', 
+    principal: 0,     
+    totalMonths: 360, 
     paidMonths: 0,
-    rate1: 2.5,       // 理財型利率通常稍高
+    rate1: 2.5,       
     rate1Months: 360,
     rate2: 2.5,
-    gracePeriod: 0,   // 理財型通常隨借隨還，或無寬限
+    gracePeriod: 0,   
     type: MortgageType.PrincipalAndInterest,
     startDate: ''
   }
 ];
-// ↑↑↑ 修改結束 ↑↑↑
 
 export const INITIAL_STOCK_LOAN: StockLoan = {
   principal: 0,
-  rate: 2.2, // 質押利率
-  maintenanceLimit: 130 // 維持率斷頭線
+  rate: 2.2, 
+  maintenanceLimit: 130 
 };
 
 export const INITIAL_GLOBAL_MARGIN_LOAN: StockLoan = {
   principal: 0,
-  rate: 6.5, // 融資利率通常較高
+  rate: 6.5, 
   maintenanceLimit: 130
 };
 
@@ -95,3 +93,12 @@ export const INITIAL_TAX_STATUS: TaxStatus = {
   hasSpouse: false,
   isDisabled: false
 };
+
+// ↓↓↓ 新增：初始分配設定 ↓↓↓
+export const INITIAL_ALLOCATION: AllocationConfig = {
+  totalFunds: 0,      // 初始資金 0
+  dividendRatio: 85,  // 配息 85%
+  hedgingRatio: 15,   // 避險 15%
+  activeRatio: 5      // 主動 5%
+};
+// ↑↑↑ 新增結束 ↑↑↑
