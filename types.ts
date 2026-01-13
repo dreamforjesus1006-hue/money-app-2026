@@ -1,3 +1,7 @@
+// ↓↓↓ 新增：定義 ETF 的三種分類 ↓↓↓
+export type EtfCategory = 'dividend' | 'hedging' | 'active';
+// ↑↑↑ 新增結束 ↑↑↑
+
 export interface Lot {
   id: string;
   date: string;
@@ -18,11 +22,14 @@ export interface ETF {
   marginLoanAmount?: number;
   marginInterestRate?: number;
   lots?: Lot[];
+  // ↓↓↓ 新增：每檔 ETF 都要有一個分類 ↓↓↓
+  category?: EtfCategory; 
+  // ↑↑↑ 新增結束 ↑↑↑
 }
 
 export enum MortgageType {
-  PrincipalAndInterest = 'PrincipalAndInterest', // 本息攤還
-  Principal = 'Principal', // 本金攤還 (本金平均攤還)
+  PrincipalAndInterest = 'PrincipalAndInterest', 
+  Principal = 'Principal', 
 }
 
 export interface Loan {
@@ -59,14 +66,12 @@ export interface TaxStatus {
   isDisabled: boolean;
 }
 
-// ↓↓↓ 新增：資金分配的設定 ↓↓↓
 export interface AllocationConfig {
-  totalFunds: number;    // 總可用資金
-  dividendRatio: number; // 配息佔比
-  hedgingRatio: number;  // 避險佔比
-  activeRatio: number;   // 主動投資佔比
+  totalFunds: number;    
+  dividendRatio: number; 
+  hedgingRatio: number;  
+  activeRatio: number;   
 }
-// ↑↑↑ 新增結束 ↑↑↑
 
 export interface AppState {
   etfs: ETF[];
@@ -75,7 +80,7 @@ export interface AppState {
   globalMarginLoan: StockLoan;
   creditLoan: CreditLoan;
   taxStatus: TaxStatus;
-  allocation?: AllocationConfig; // 加入 AppState
+  allocation?: AllocationConfig; 
 }
 
 export interface MonthlyCashFlow {
