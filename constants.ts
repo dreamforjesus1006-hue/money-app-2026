@@ -11,7 +11,8 @@ export const INITIAL_ETFS: ETF[] = [
     dividendType: 'annual', 
     payMonths: [1, 4, 7, 10],
     marginLoanAmount: 0,
-    marginInterestRate: 2.2
+    marginInterestRate: 2.2,
+    category: 'dividend' // 設定為配息型
   },
   { 
     id: '00919', 
@@ -23,7 +24,8 @@ export const INITIAL_ETFS: ETF[] = [
     dividendType: 'annual', 
     payMonths: [3, 6, 9, 12],
     marginLoanAmount: 0,
-    marginInterestRate: 2.2
+    marginInterestRate: 2.2,
+    category: 'dividend' // 設定為配息型
   },
   { 
     id: '00929', 
@@ -35,7 +37,8 @@ export const INITIAL_ETFS: ETF[] = [
     dividendType: 'annual', 
     payMonths: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
     marginLoanAmount: 0,
-    marginInterestRate: 2.2
+    marginInterestRate: 2.2,
+    category: 'dividend' // 設定為配息型
   },
 ];
 
@@ -44,12 +47,12 @@ export const INITIAL_LOANS: Loan[] = [
     id: 'loan-1',
     name: '新青安房貸',
     principal: 8340000,
-    totalMonths: 480, // 40年
+    totalMonths: 480, 
     paidMonths: 0,
     rate1: 1.775,
-    rate1Months: 480, // 一段式
+    rate1Months: 480, 
     rate2: 1.775,
-    gracePeriod: 60, // 5年寬限
+    gracePeriod: 60, 
     type: MortgageType.PrincipalAndInterest,
     startDate: '2025-12-01' 
   },
@@ -94,11 +97,9 @@ export const INITIAL_TAX_STATUS: TaxStatus = {
   isDisabled: false
 };
 
-// ↓↓↓ 新增：初始分配設定 ↓↓↓
 export const INITIAL_ALLOCATION: AllocationConfig = {
-  totalFunds: 0,      // 初始資金 0
-  dividendRatio: 85,  // 配息 85%
-  hedgingRatio: 15,   // 避險 15%
-  activeRatio: 5      // 主動 5%
+  totalFunds: 0,      
+  dividendRatio: 85,  
+  hedgingRatio: 15,   
+  activeRatio: 5      
 };
-// ↑↑↑ 新增結束 ↑↑↑
