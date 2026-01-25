@@ -7,7 +7,7 @@ import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 
-// Import RPG Icons
+// Import Icons
 import { 
   Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, 
   RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, 
@@ -20,11 +20,12 @@ import Decimal from 'decimal.js';
 
 const BROKERAGE_RATE = 0.001425; 
 
+// Colors
 const COLORS = {
-  dividend: '#10b981', 
-  hedging: '#f59e0b',  
-  active: '#8b5cf6',   
-  cash: '#334155'      
+  dividend: '#10b981', // Emerald
+  hedging: '#f59e0b',  // Amber
+  active: '#8b5cf6',   // Purple
+  cash: '#334155'      // Slate
 };
 
 interface ExtendedCloudConfig extends CloudConfig {
@@ -42,6 +43,7 @@ const QUOTES = [
     "「最好的持有期限是永遠。」"
 ];
 
+// Animation Hook
 const useCountUp = (end: number, duration = 2000) => {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -69,7 +71,7 @@ const AnimatedNumber: React.FC<{ value: number, prefix?: string, className?: str
 };
 
 const App: React.FC = () => {
-  // --- States ---
+  // --- 1. State Definitions ---
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showHelp, setShowHelp] = useState(false);
@@ -96,7 +98,7 @@ const App: React.FC = () => {
   const [buyForm, setBuyForm] = useState<{shares: string, price: string, date: string}>({ shares: '', price: '', date: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Effects ---
+  // --- 2. Effects (Load & Save) ---
   useEffect(() => {
     const initData = async () => {
       try {
@@ -132,7 +134,7 @@ const App: React.FC = () => {
     }, 1000); return () => clearTimeout(timer);
   }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation, isInitializing, cloudConfig]);
 
-  // --- Handlers ---
+  // --- 3. Handlers ---
   const handleUpdatePrices = async () => {
       if (!cloudConfig.priceSourceUrl) { alert('請先設定 Google Sheet 連結！'); setShowSettings(true); return; }
       setIsUpdatingPrices(true);
@@ -154,22 +156,60 @@ const App: React.FC = () => {
       setShowLoot(true);
   };
 
-  // --- Calculations ---
-  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
-  const stressTestResults = useMemo(() => PortfolioCalculator.runStressTest(etfs, stockLoan, globalMarginLoan), [etfs, stockLoan, globalMarginLoan]);
+  const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
+  const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
+  const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
+  const toggleEtfPayMonth = (i: number, m: number) => { const e = etfs[i]; const ms = e.payMonths.includes(m) ? e.payMonths.filter(x => x !== m) : [...e.payMonths, m].sort((a, b) => a - b); updateEtf(i, 'payMonths', ms); };
+  const toggleEtfDividendType = (i: number) => { const n = [...etfs]; n[i].dividendType = n[i].dividendType === 'annual' ? 'per_period' : 'annual'; setEtfs(n); };
+  const toggleLots = (id: string) => { setExpandedEtfId(expandedEtfId === id ? null : id); setActiveBuyId(null); };
+  const toggleBuy = (id: string) => { setActiveBuyId(activeBuyId === id ? null : id); setExpandedEtfId(null); };
+  const handleSmartMerge = () => { const items = INITIAL_ETFS.filter(e => !new Set(etfs.map(e => e.id)).has(e.id)); if (items.length && confirm(`補入 ${items.length} 個預設項目？`)) setEtfs([...etfs, ...items]); else alert('無需補全'); };
+  const handleImportClick = () => fileInputRef.current?.click();
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const f=e.target.files?.[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{ try{ const s=JSON.parse(ev.target?.result as string) as AppState; if(s.etfs){ setEtfs(s.etfs); setLoans(s.loans||[]); setStockLoan(s.stockLoan||INITIAL_STOCK_LOAN); setGlobalMarginLoan(s.globalMarginLoan||INITIAL_GLOBAL_MARGIN_LOAN); setCreditLoan(s.creditLoan||INITIAL_CREDIT_LOAN); setTaxStatus(s.taxStatus||INITIAL_TAX_STATUS); setAllocation(s.allocation||INITIAL_ALLOCATION); alert('讀取成功'); } }catch{alert('格式錯誤');}}; r.readAsText(f); e.target.value=''; };
+  const handleExport = () => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation });
+  const handleReset = () => { if(confirm('重置？')) { setEtfs(INITIAL_ETFS); setLoans(INITIAL_LOANS); window.location.reload(); }};
+  
+  const submitBuy = (i: number) => {
+    const s = Number(buyForm.shares), p = Number(buyForm.price); if (!s || !p) return;
+    const targetEtf = etfs[i]; 
+    // FIX: Gold Fee is 0
+    const fee = targetEtf.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE);
+    const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; l.push({ id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee }); 
+    const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); 
+    n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); setBuyForm({ ...buyForm, shares: '', price: '' }); setActiveBuyId(null); 
+  };
+  const addLot = (i: number) => { 
+    const s = Number(newLot.shares), p = Number(newLot.price); if (!s || !p) return; 
+    const targetEtf = etfs[i]; 
+    // FIX: Gold Fee is 0
+    const fee = targetEtf.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE);
+    const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; l.push({ id: Date.now().toString(), date: newLot.date, shares: s, price: p, fee }); 
+    const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); 
+    n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); setNewLot({ ...newLot, shares: '', price: '' }); 
+  };
+  const removeLot = (i: number, lid: string) => { const n = [...etfs]; const l = n[i].lots!.filter(x => x.id !== lid); const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); };
+  const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
+
+  // --- 4. Core Calculations (Strict Order) ---
+  // A. Basic Totals
   const totalMarketValue = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * etf.currentPrice), 0), [etfs]);
   const totalCost = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * (etf.costPrice || 0)), 0), [etfs]);
   const unrealizedPL = totalMarketValue - totalCost;
   const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((acc, e) => acc + (e.marginLoanAmount || 0), 0);
   const totalRealDebt = loans.reduce((acc, l) => acc + l.principal, 0) + creditLoan.principal;
   const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
-  const mortgageCoverage = useMemo(() => {
-      const div = monthlyFlows.reduce((acc, curr) => acc + curr.dividendInflow, 0);
-      const loan = monthlyFlows.reduce((acc, curr) => acc + curr.loanOutflow + curr.creditLoanOutflow, 0);
-      return loan === 0 ? 100 : (div / loan) * 100;
-  }, [monthlyFlows]);
 
-  // ★★★ Fixed: Defined fireMetrics Here! ★★★
+  // B. Allocation Calculations
+  const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
+
+  // C. Flow Calculations (PortfolioCalculator)
+  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
+  const stressTestResults = useMemo(() => PortfolioCalculator.runStressTest(etfs, stockLoan, globalMarginLoan), [etfs, stockLoan, globalMarginLoan]);
+
+  // D. Derived Metrics (Depend on A, B, C)
   const fireMetrics = useMemo(() => {
       const annualExpenses = monthlyFlows.reduce((acc, cur) => acc + cur.loanOutflow + cur.creditLoanOutflow + cur.livingExpenses, 0);
       const annualPassive = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
@@ -177,8 +217,7 @@ const App: React.FC = () => {
       return { ratio, annualExpenses, annualPassive };
   }, [monthlyFlows]);
 
-  // Game Logic
-  const combatPower = Math.floor((totalMarketValue / 10000) + (fireMetrics.annualPassive/12/100));
+  const combatPower = useMemo(() => Math.floor((totalMarketValue / 10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
   
   const levelInfo = useMemo(() => {
       const r = fireMetrics.ratio;
@@ -188,22 +227,33 @@ const App: React.FC = () => {
       return { title: '初心冒險者 🪵', color: 'text-slate-400', bar: 'bg-slate-600', next: 20 };
   }, [fireMetrics]);
 
-  // Skill Levels
   const skills = useMemo(() => {
-      const divScore = Math.min(100, (fireMetrics.annualPassive / 500000) * 100); // Target 500k/yr
-      const hedgeScore = Math.min(100, (etfs.filter(e=>e.category==='hedging').reduce((a,c)=>a+c.shares*c.currentPrice,0) / (totalMarketValue||1)) * 500); // Target 20%
-      const leverageScore = Math.min(100, (totalStockDebt / 5000000) * 100); // Usage
-      const growthScore = Math.min(100, (unrealizedPL / 1000000) * 100); // 1M profit
+      const divScore = Math.min(100, (fireMetrics.annualPassive / 500000) * 100); 
+      const hedgeScore = Math.min(100, (actualHedging / (totalMarketValue||1)) * 500); 
+      const leverageScore = Math.min(100, (totalStockDebt / 5000000) * 100); 
+      const growthScore = Math.min(100, (unrealizedPL / 1000000) * 100); 
       return [
           { name: '股息水流斬', level: Math.floor(divScore), icon: <RefreshCw className="w-4 h-4"/>, color: 'text-emerald-400', bar: 'bg-emerald-500' },
           { name: '絕對防禦', level: Math.floor(hedgeScore), icon: <ShieldCheck className="w-4 h-4"/>, color: 'text-amber-400', bar: 'bg-amber-500' },
           { name: '槓桿爆發', level: Math.floor(leverageScore), icon: <Zap className="w-4 h-4"/>, color: 'text-blue-400', bar: 'bg-blue-500' },
           { name: '資本增幅', level: Math.floor(growthScore), icon: <TrendingUp className="w-4 h-4"/>, color: 'text-purple-400', bar: 'bg-purple-500' },
       ];
-  }, [fireMetrics, etfs, totalMarketValue, totalStockDebt, unrealizedPL]);
+  }, [fireMetrics, actualHedging, totalMarketValue, totalStockDebt, unrealizedPL]);
 
-  // Charts
+  const achievements = useMemo(() => [
+      { id: '1', name: '初心冒險者', icon: <Swords className="w-5 h-5"/>, desc: '開始您的投資旅程', unlocked: totalMarketValue > 0, color: 'text-slate-400' },
+      { id: '2', name: '第一桶金', icon: <Coins className="w-5 h-5"/>, desc: '總資產突破 100 萬', unlocked: totalMarketValue >= 1000000, color: 'text-emerald-400' },
+      { id: '3', name: '千萬富翁', icon: <Gem className="w-5 h-5"/>, desc: '總資產突破 1000 萬', unlocked: totalMarketValue >= 10000000, color: 'text-purple-400' },
+      { id: '4', name: '煉金術士', icon: <Sparkles className="w-5 h-5"/>, desc: '持有黃金等避險資產', unlocked: actualHedging > 0, color: 'text-yellow-400' },
+      { id: '5', name: '現金流大師', icon: <RefreshCw className="w-5 h-5"/>, desc: '年股息超過 50 萬', unlocked: fireMetrics.annualPassive >= 500000, color: 'text-blue-400' },
+      { id: '6', name: '槓桿戰士', icon: <Zap className="w-5 h-5"/>, desc: '使用融資或質押', unlocked: totalStockDebt > 0, color: 'text-red-400' },
+      { id: '7', name: '財富國王', icon: <Crown className="w-5 h-5"/>, desc: 'FIRE 自由度達 100%', unlocked: fireMetrics.ratio >= 100, color: 'text-yellow-500' },
+      { id: '8', name: '債務殺手', icon: <Skull className="w-5 h-5"/>, desc: '資產大於總負債', unlocked: totalMarketValue > (totalStockDebt + totalRealDebt), color: 'text-orange-500' },
+  ], [totalMarketValue, actualHedging, fireMetrics, totalStockDebt, totalRealDebt]);
+
+  // E. Chart Data (Depend on everything above)
   const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
+  
   const snowballData = useMemo(() => {
       const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05;
       const annualSavings = yearlyNetPosition.toNumber() > 0 ? yearlyNetPosition.toNumber() : 0;
@@ -218,33 +268,32 @@ const App: React.FC = () => {
   
   const radarData = useMemo(() => {
      const yieldScore = totalMarketValue > 0 ? Math.min(100, ((fireMetrics.annualPassive / totalMarketValue) / 0.06) * 100) : 0;
-     const actualHedging = etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0);
      const hedgeScore = Math.min(100, (actualHedging / (totalMarketValue || 1)) * 500);
      const marginScore = currentMaintenance > 200 ? 100 : Math.max(0, (currentMaintenance - 130));
-     const activeScore = Math.min(100, (etfs.filter(e=>e.category==='active').reduce((a,e)=>a+e.shares*e.currentPrice,0) / (totalMarketValue||1)) * 1000);
+     const activeScore = Math.min(100, (actualActive / (totalMarketValue||1)) * 1000);
      const taxRatio = (healthInsuranceTotal.plus(incomeTaxTotal).toNumber() / (fireMetrics.annualPassive || 1));
      const taxScore = Math.max(0, 100 - (taxRatio * 500)); 
      return [{ subject: '現金流', A: Math.floor(yieldScore), fullMark: 100 }, { subject: '防禦力', A: Math.floor((hedgeScore+marginScore)/2), fullMark: 100 }, { subject: '成長力', A: Math.floor(activeScore), fullMark: 100 }, { subject: '稅務', A: Math.floor(taxScore), fullMark: 100 }, { subject: '抗壓', A: marginScore, fullMark: 100 }];
-  }, [monthlyFlows, totalMarketValue, currentMaintenance, etfs, fireMetrics, healthInsuranceTotal, incomeTaxTotal]);
+  }, [monthlyFlows, totalMarketValue, currentMaintenance, actualHedging, actualActive, fireMetrics, healthInsuranceTotal, incomeTaxTotal]);
 
-  // Handlers (Condensed)
-  const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
-  const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
-  const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
-  const toggleEtfPayMonth = (i: number, m: number) => { const e = etfs[i]; const ms = e.payMonths.includes(m) ? e.payMonths.filter(x => x !== m) : [...e.payMonths, m].sort((a, b) => a - b); updateEtf(i, 'payMonths', ms); };
-  const toggleEtfDividendType = (i: number) => { const n = [...etfs]; n[i].dividendType = n[i].dividendType === 'annual' ? 'per_period' : 'annual'; setEtfs(n); };
-  const toggleLots = (id: string) => { setExpandedEtfId(expandedEtfId === id ? null : id); setActiveBuyId(null); };
-  const toggleBuy = (id: string) => { setActiveBuyId(activeBuyId === id ? null : id); setExpandedEtfId(null); };
-  const handleSmartMerge = () => { const items = INITIAL_ETFS.filter(e => !new Set(etfs.map(e => e.id)).has(e.id)); if (items.length && confirm(`補入 ${items.length} 個預設項目？`)) setEtfs([...etfs, ...items]); else alert('無需補全'); };
-  const handleImportClick = () => fileInputRef.current?.click();
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const f=e.target.files?.[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{ try{ const s=JSON.parse(ev.target?.result as string) as AppState; if(s.etfs){ setEtfs(s.etfs); setLoans(s.loans||[]); setStockLoan(s.stockLoan||INITIAL_STOCK_LOAN); setGlobalMarginLoan(s.globalMarginLoan||INITIAL_GLOBAL_MARGIN_LOAN); setCreditLoan(s.creditLoan||INITIAL_CREDIT_LOAN); setTaxStatus(s.taxStatus||INITIAL_TAX_STATUS); setAllocation(s.allocation||INITIAL_ALLOCATION); alert('讀取成功'); } }catch{alert('格式錯誤');}}; r.readAsText(f); e.target.value=''; };
-  const handleExport = () => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation });
-  const handleReset = () => { if(confirm('重置？')) { setEtfs(INITIAL_ETFS); setLoans(INITIAL_LOANS); window.location.reload(); }};
-  
-  const submitBuy = (i: number) => { const s = Number(buyForm.shares), p = Number(buyForm.price); if (!s || !p) return; const t = etfs[i]; const fee = t.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE); const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; l.push({ id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee }); const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); setBuyForm({ ...buyForm, shares: '', price: '' }); setActiveBuyId(null); };
-  const addLot = (i: number) => { const s = Number(newLot.shares), p = Number(newLot.price); if (!s || !p) return; const t = etfs[i]; const fee = t.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE); const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; l.push({ id: Date.now().toString(), date: newLot.date, shares: s, price: p, fee }); const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); setNewLot({ ...newLot, shares: '', price: '' }); };
-  const removeLot = (i: number, lid: string) => { const n = [...etfs]; const l = n[i].lots!.filter(x => x.id !== lid); const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); };
-  const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
+  const mortgageCoverage = useMemo(() => {
+      const totalDividendInflow = monthlyFlows.reduce((acc, curr) => acc + curr.dividendInflow, 0);
+      const totalLoanOutflow = monthlyFlows.reduce((acc, curr) => acc + curr.loanOutflow + curr.creditLoanOutflow, 0);
+      return totalLoanOutflow === 0 ? 100 : (totalDividendInflow / totalLoanOutflow) * 100;
+  }, [monthlyFlows]);
+
+  const breakevenTip = useMemo(() => {
+      if (yearlyNetPosition.gte(0)) return null;
+      const deficit = yearlyNetPosition.abs().toNumber();
+      const divEtfs = etfs.filter(e => e.category === 'dividend' && e.shares > 0);
+      let totalInvested = 0; let totalDiv = 0;
+      divEtfs.forEach(e => {
+          const mkt = e.shares * e.currentPrice; const freq = e.dividendType === 'per_period' && e.payMonths.length > 0 ? e.payMonths.length : 1;
+          totalInvested += mkt; totalDiv += e.dividendPerShare * freq * e.shares;
+      });
+      const avgYield = totalInvested > 0 ? totalDiv / totalInvested : 0.06;
+      return { deficit, avgYield: (avgYield * 100).toFixed(1), neededCapital: deficit / avgYield };
+  }, [yearlyNetPosition, etfs]);
 
   if (isInitializing) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400 font-mono">系統啟動中...</p></div>;
 
@@ -359,6 +408,7 @@ const App: React.FC = () => {
           </div>
       </div>
 
+      {/* Main Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
@@ -475,6 +525,23 @@ const App: React.FC = () => {
                   <tbody>{monthlyFlows.map(r=><tr key={r.month} className="border-b border-slate-800 hover:bg-slate-800/50"><td className="p-2">{r.month}</td><td className="p-2 text-right text-emerald-400">{formatMoney(r.dividendInflow)}</td><td className="p-2 text-right text-red-400">{formatMoney(r.loanOutflow)}</td><td className="p-2 text-right text-orange-400">{formatMoney(r.creditLoanOutflow)}</td><td className="p-2 text-right text-blue-400">{formatMoney(r.stockLoanInterest)}</td><td className="p-2 text-right text-slate-400">{formatMoney(r.livingExpenses)}</td><td className="p-2 text-right text-purple-400">{formatMoney(r.taxWithheld)}</td><td className={`p-2 text-right font-bold ${r.netFlow<0?'text-red-500':'text-emerald-500'}`}>{formatMoney(r.netFlow)}</td></tr>)}</tbody>
               </table>
           </div>
+          
+          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂</div>
+              <div className="flex-1 grid grid-cols-4 gap-2 overflow-y-auto max-h-[100px]">
+                  {achievements.map(ach => (
+                      <div key={ach.id} className={`aspect-square rounded-xl flex items-center justify-center border transition-all relative group ${ach.unlocked ? `bg-slate-950 ${ach.color} border-${ach.color.split('-')[1]}-500/50 shadow-lg shadow-${ach.color.split('-')[1]}-500/20` : 'bg-slate-950/30 border-slate-800 text-slate-700 grayscale'}`}>
+                          {ach.icon}
+                          {/* Tooltip */}
+                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-32 bg-black/90 text-white text-[10px] p-2 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 text-center border border-slate-700">
+                              <div className={`font-bold mb-1 ${ach.unlocked ? ach.color : 'text-slate-500'}`}>{ach.name}</div>
+                              <div className="text-slate-400">{ach.desc}</div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+
         </div>
       </div>
     </div>
