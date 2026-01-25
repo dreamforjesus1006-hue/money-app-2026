@@ -1,7 +1,8 @@
+// constants.ts 全選貼上
 import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AllocationConfig } from './types';
 
 export const INITIAL_ETFS: ETF[] = [
-  // =========== 85% 配息型 (現金流主力) ===========
+  // 85% 配息型
   { 
     id: '0056', 
     name: '0056 (高股息)', 
@@ -42,23 +43,23 @@ export const INITIAL_ETFS: ETF[] = [
     category: 'dividend'
   },
 
-  // =========== 15% 避險型 (黃金/債券) ===========
+  // 15% 避險型 (黃金/債券)
   { 
     id: 'GOLD', 
     name: '實體黃金 (克)', 
-    shares: 0,      // 【填寫說明】這裡請輸入「重量」(例如：100克)
-    costPrice: 0,   // 【填寫說明】輸入您的平均買入金價
-    currentPrice: 2850, // 假設目前台銀金價 (台幣/克)，請自行更新
-    dividendPerShare: 0, // 黃金無配息，設為 0
+    shares: 0,      // 請輸入重量
+    costPrice: 0,   // 請輸入買入均價
+    currentPrice: 2850, // 請輸入目前金價
+    dividendPerShare: 0, 
     dividendType: 'annual', 
     payMonths: [],
     marginLoanAmount: 0,
     marginInterestRate: 0,
-    category: 'hedging' // 自動歸類到黃色避險區塊
+    category: 'hedging'
   },
   { 
     id: 'HEDGE-1', 
-    name: '自選避險標的 (請改名)', 
+    name: '自選避險標的', 
     shares: 0, 
     costPrice: 0, 
     currentPrice: 0, 
@@ -67,13 +68,13 @@ export const INITIAL_ETFS: ETF[] = [
     payMonths: [], 
     marginLoanAmount: 0,
     marginInterestRate: 0,
-    category: 'hedging' // 自動歸類到黃色避險區塊
+    category: 'hedging'
   },
 
-  // =========== 5% 主動型 (價差交易) ===========
+  // 5% 主動型
   { 
     id: 'ACTIVE-1', 
-    name: '自選主動標的 (請改名)', 
+    name: '自選主動標的', 
     shares: 0, 
     costPrice: 0, 
     currentPrice: 0, 
@@ -82,7 +83,7 @@ export const INITIAL_ETFS: ETF[] = [
     payMonths: [],
     marginLoanAmount: 0,
     marginInterestRate: 0,
-    category: 'active' // 自動歸類到紫色主動區塊
+    category: 'active'
   },
 ];
 
@@ -141,7 +142,6 @@ export const INITIAL_TAX_STATUS: TaxStatus = {
   isDisabled: false
 };
 
-// 您的資金規劃比例
 export const INITIAL_ALLOCATION: AllocationConfig = {
   totalFunds: 0,      
   dividendRatio: 85,  
