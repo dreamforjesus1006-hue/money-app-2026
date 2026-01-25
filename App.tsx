@@ -1,22 +1,30 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell, ComposedChart, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area } from 'recharts';
 import { INITIAL_ETFS, INITIAL_LOANS, INITIAL_STOCK_LOAN, INITIAL_CREDIT_LOAN, INITIAL_TAX_STATUS, INITIAL_GLOBAL_MARGIN_LOAN, INITIAL_ALLOCATION } from './constants';
-import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AppState, Lot, CloudConfig, AllocationConfig, EtfCategory } from './types';
+import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AppState, CloudConfig, AllocationConfig } from './types';
 
 import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 
-import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, RefreshCw, Trophy, Crown, Swords, ArrowUpCircle } from 'lucide-react';
+// Import lots of icons for the game feel
+import { 
+  Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, 
+  RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, 
+  Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, 
+  Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, 
+  Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, 
+  RefreshCw, Trophy, Crown, Swords, Skull, Gem, Scroll, Medal, Sparkles
+} from 'lucide-react';
 import Decimal from 'decimal.js';
 
 const BROKERAGE_RATE = 0.001425; 
 
-// Colors
+// Cyberpunk / Game Colors
 const COLORS = {
-  dividend: '#10b981', // Emerald
-  hedging: '#f59e0b',  // Amber
-  active: '#a855f7',   // Purple
+  dividend: '#10b981', // Emerald (Healer/Income)
+  hedging: '#f59e0b',  // Amber (Shield/Gold)
+  active: '#8b5cf6',   // Violet (Magic/Growth)
   cash: '#334155'      // Slate
 };
 
@@ -24,8 +32,37 @@ interface ExtendedCloudConfig extends CloudConfig {
     priceSourceUrl?: string;
 }
 
+// Custom Hook for Number Animation (Rolling Effect)
+const useCountUp = (end: number, duration = 2000) => {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let start = 0;
+    const increment = end / (duration / 16); // 60fps
+    let timer: NodeJS.Timeout;
+    
+    const animate = () => {
+      start += increment;
+      if ((increment > 0 && start >= end) || (increment < 0 && start <= end)) {
+        setCount(end);
+      } else {
+        setCount(start);
+        timer = setTimeout(animate, 16);
+      }
+    };
+    animate();
+    return () => clearTimeout(timer);
+  }, [end, duration]);
+  return count;
+};
+
+// Animated Number Component
+const AnimatedNumber: React.FC<{ value: number, prefix?: string, className?: string }> = ({ value, prefix = '', className = '' }) => {
+    const animatedValue = useCountUp(value);
+    return <span className={className}>{prefix}{formatMoney(animatedValue)}</span>;
+};
+
 const App: React.FC = () => {
-  // Loading States
+  // Loading & UI States
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showHelp, setShowHelp] = useState(false);
@@ -34,17 +71,9 @@ const App: React.FC = () => {
   const [dataSource, setDataSource] = useState<'local' | 'cloud' | 'gas'>('local');
   const [reinvest, setReinvest] = useState(true);
   const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
-
-  // Cloud Config State
-  const [cloudConfig, setCloudConfig] = useState<ExtendedCloudConfig>({ 
-    apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
-    projectId: 'baozutang-finance', 
-    syncId: 'tony1006', 
-    enabled: true,
-    priceSourceUrl: '' 
-  });
-
+  
   // Data States
+  const [cloudConfig, setCloudConfig] = useState<ExtendedCloudConfig>({ apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', projectId: 'baozutang-finance', syncId: 'tony1006', enabled: true, priceSourceUrl: '' });
   const [etfs, setEtfs] = useState<ETF[]>(INITIAL_ETFS);
   const [loans, setLoans] = useState<Loan[]>(INITIAL_LOANS);
   const [stockLoan, setStockLoan] = useState<StockLoan>(INITIAL_STOCK_LOAN);
@@ -53,7 +82,7 @@ const App: React.FC = () => {
   const [taxStatus, setTaxStatus] = useState<TaxStatus>(INITIAL_TAX_STATUS);
   const [allocation, setAllocation] = useState<AllocationConfig>(INITIAL_ALLOCATION);
   
-  // UI State
+  // Interactive States
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [newLot, setNewLot] = useState<{shares: string, price: string, date: string}>({ shares: '', price: '', date: '' });
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
@@ -65,19 +94,15 @@ const App: React.FC = () => {
     const initData = async () => {
       try {
         const savedConfig = StorageService.loadCloudConfig();
-        if (savedConfig) {
-             setCloudConfig(prev => ({ ...prev, ...savedConfig }));
-        } else {
-             StorageService.saveCloudConfig(cloudConfig);
-        }
+        if (savedConfig) setCloudConfig(prev => ({ ...prev, ...savedConfig }));
+        else StorageService.saveCloudConfig(cloudConfig);
 
         const result = await StorageService.loadData();
         const loadedState = result.data;
         setDataSource(result.source);
         if (loadedState) {
           const loadedEtfs = loadedState.etfs || INITIAL_ETFS;
-          const sanitizedEtfs = loadedEtfs.map(e => ({ ...e, category: e.category || 'dividend' }));
-          setEtfs(sanitizedEtfs);
+          setEtfs(loadedEtfs.map(e => ({ ...e, category: e.category || 'dividend' })));
           let mergedLoans = loadedState.loans || INITIAL_LOANS;
           if (mergedLoans.length < INITIAL_LOANS.length) mergedLoans = [...mergedLoans, INITIAL_LOANS[1]];
           setLoans(mergedLoans);
@@ -88,11 +113,7 @@ const App: React.FC = () => {
           setAllocation(loadedState.allocation || INITIAL_ALLOCATION);
         }
         setStorageStats(StorageService.getStorageUsage());
-      } catch (error) {
-        console.error("Failed to load initial data", error);
-        const localData = StorageService.loadFromLocal();
-        if (localData) { setEtfs(localData.etfs || INITIAL_ETFS); setLoans(localData.loans || INITIAL_LOANS); setAllocation(localData.allocation || INITIAL_ALLOCATION); }
-      } finally { setIsInitializing(false); }
+      } catch (error) { console.error("Init failed", error); } finally { setIsInitializing(false); }
     };
     initData();
   }, []);
@@ -103,93 +124,53 @@ const App: React.FC = () => {
     setSaveStatus('saving');
     const currentState: AppState = { etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation };
     const timer = setTimeout(async () => {
-      try { 
-          await StorageService.saveData(currentState); 
-          StorageService.saveCloudConfig(cloudConfig);
-          setStorageStats(StorageService.getStorageUsage()); 
-          setSaveStatus('saved'); 
-          setTimeout(() => setSaveStatus('idle'), 2000); 
-      } 
-      catch (error) { console.error("Save failed", error); setSaveStatus('error'); }
+      try { await StorageService.saveData(currentState); StorageService.saveCloudConfig(cloudConfig); setStorageStats(StorageService.getStorageUsage()); setSaveStatus('saved'); setTimeout(() => setSaveStatus('idle'), 2000); } 
+      catch (error) { setSaveStatus('error'); }
     }, 1000); 
     return () => clearTimeout(timer);
   }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation, isInitializing, cloudConfig]);
 
-  // Update Prices
+  // Update Prices Logic
   const handleUpdatePrices = async () => {
-      if (!cloudConfig.priceSourceUrl) {
-          alert('請先在「設定」中貼上您的 Google Sheet CSV 發布連結！');
-          setShowSettings(true);
-          return;
-      }
+      if (!cloudConfig.priceSourceUrl) { alert('請先設定 Google Sheet CSV 連結！'); setShowSettings(true); return; }
       setIsUpdatingPrices(true);
       try {
           const response = await fetch(cloudConfig.priceSourceUrl);
           const text = await response.text();
           const rows = text.split('\n').map(row => row.split(','));
           const priceMap = new Map<string, number>();
-          rows.forEach(row => {
-              if (row.length >= 2) {
-                  const id = row[0].replace(/['"\r]/g, '').trim(); 
-                  const priceStr = row[1].replace(/['"\r]/g, '').trim();
-                  const price = parseFloat(priceStr);
-                  if (id && !isNaN(price)) priceMap.set(id, price);
-              }
-          });
+          rows.forEach(row => { if (row.length >= 2) { const id = row[0].replace(/['"\r]/g, '').trim(); const price = parseFloat(row[1].replace(/['"\r]/g, '').trim()); if (id && !isNaN(price)) priceMap.set(id, price); } });
           let updatedCount = 0;
-          const newEtfs = etfs.map(etf => {
-              const newPrice = priceMap.get(etf.id);
-              if (newPrice !== undefined) { updatedCount++; return { ...etf, currentPrice: newPrice }; }
-              return etf;
-          });
-          setEtfs(newEtfs);
-          alert(`更新完成！共更新了 ${updatedCount} 個標的之現價。`);
-      } catch (error) {
-          console.error("Price update failed", error);
-          alert('更新失敗。請檢查您的 Google Sheet 連結是否正確且已發布為 CSV 格式。');
-      } finally { setIsUpdatingPrices(false); }
+          const newEtfs = etfs.map(etf => { const newPrice = priceMap.get(etf.id); if (newPrice !== undefined) { updatedCount++; return { ...etf, currentPrice: newPrice }; } return etf; });
+          setEtfs(newEtfs); alert(`戰鬥數據更新完畢！共更新 ${updatedCount} 個標的。`);
+      } catch (error) { alert('更新失敗，請檢查連結。'); } finally { setIsUpdatingPrices(false); }
   };
 
-  const handleImportClick = () => fileInputRef.current?.click();
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const json = e.target?.result as string; const state = JSON.parse(json) as AppState;
-        if (state.etfs && state.loans) {
-           const loadedEtfs = state.etfs.map(e => ({...e, category: e.category || 'dividend'}));
-           setEtfs(loadedEtfs); setLoans(state.loans); setStockLoan(state.stockLoan || INITIAL_STOCK_LOAN);
-           setGlobalMarginLoan(state.globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN); setCreditLoan(state.creditLoan || INITIAL_CREDIT_LOAN);
-           setTaxStatus(state.taxStatus || INITIAL_TAX_STATUS); setAllocation(state.allocation || INITIAL_ALLOCATION);
-           setStorageStats(StorageService.getStorageUsage()); alert('資料匯入成功！');
-        } else { alert('檔案格式錯誤'); }
-      } catch (error) { console.error(error); alert('無法讀取檔案'); }
-    }; reader.readAsText(file); event.target.value = '';
-  };
-  const handleReset = () => { if (window.confirm('確定要重置所有數據回到預設值嗎？此動作無法復原。')) { setEtfs(INITIAL_ETFS); setLoans(INITIAL_LOANS); setStockLoan(INITIAL_STOCK_LOAN); setGlobalMarginLoan(INITIAL_GLOBAL_MARGIN_LOAN); setCreditLoan(INITIAL_CREDIT_LOAN); setTaxStatus(INITIAL_TAX_STATUS); setAllocation(INITIAL_ALLOCATION); setTimeout(() => { StorageService.saveData({ etfs: INITIAL_ETFS, loans: INITIAL_LOANS, stockLoan: INITIAL_STOCK_LOAN, globalMarginLoan: INITIAL_GLOBAL_MARGIN_LOAN, creditLoan: INITIAL_CREDIT_LOAN, taxStatus: INITIAL_TAX_STATUS, allocation: INITIAL_ALLOCATION }); setStorageStats(StorageService.getStorageUsage()); window.location.reload(); }, 100); } };
-  const handleExport = () => { StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation }); };
-  const handleSmartMerge = () => {
-      const currentIds = new Set(etfs.map(e => e.id)); const missingItems = INITIAL_ETFS.filter(e => !currentIds.has(e.id));
-      if (missingItems.length === 0) { alert('您的清單已經很完整了！沒有缺少的預設項目。'); return; }
-      if (window.confirm(`發現 ${missingItems.length} 個新的預設項目 (如: 黃金、美債)。\n是否要將它們補入您的清單？\n(您的舊資料絕對安全，不會被刪除)`)) {
-          setEtfs([...etfs, ...missingItems]); setTimeout(() => alert('補全完成！請往下滑查看新增的項目。'), 500);
-      }
-  };
-
-  // Calculations
+  // --- Calculations & Game Logic ---
   const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   const stressTestResults = useMemo(() => PortfolioCalculator.runStressTest(etfs, stockLoan, globalMarginLoan), [etfs, stockLoan, globalMarginLoan]);
   const totalMarketValue = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * etf.currentPrice), 0), [etfs]);
   const totalCost = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * (etf.costPrice || 0)), 0), [etfs]);
   const unrealizedPL = totalMarketValue - totalCost;
   const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((acc, e) => acc + (e.marginLoanAmount || 0), 0);
+  const totalRealDebt = loans.reduce((acc, l) => acc + l.principal, 0) + creditLoan.principal; // Mortgage + Credit
   const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
-  const mortgageCoverage = useMemo(() => {
-      const totalDividendInflow = monthlyFlows.reduce((acc, curr) => acc + curr.dividendInflow, 0);
-      const totalLoanOutflow = monthlyFlows.reduce((acc, curr) => acc + curr.loanOutflow + curr.creditLoanOutflow, 0);
-      return totalLoanOutflow === 0 ? 100 : (totalDividendInflow / totalLoanOutflow) * 100;
-  }, [monthlyFlows]);
+  
+  // Game Metrics
+  const combatPower = Math.floor((totalMarketValue / 10000) + (monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0)/12/100));
+  const fireRatio = (monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0) / (monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0) || 1)) * 100;
+  
+  // Achievements
+  const achievements = [
+      { id: '1', name: '初心冒險者', icon: <Swords className="w-5 h-5"/>, desc: '開始您的投資旅程', unlocked: totalMarketValue > 0, color: 'text-slate-400' },
+      { id: '2', name: '第一桶金', icon: <Coins className="w-5 h-5"/>, desc: '總資產突破 100 萬', unlocked: totalMarketValue >= 1000000, color: 'text-emerald-400' },
+      { id: '3', name: '千萬富翁', icon: <Gem className="w-5 h-5"/>, desc: '總資產突破 1000 萬', unlocked: totalMarketValue >= 10000000, color: 'text-purple-400' },
+      { id: '4', name: '煉金術士', icon: <Sparkles className="w-5 h-5"/>, desc: '持有黃金等避險資產', unlocked: etfs.some(e => e.category === 'hedging' && e.shares > 0), color: 'text-yellow-400' },
+      { id: '5', name: '現金流大師', icon: <RefreshCw className="w-5 h-5"/>, desc: '年股息超過 50 萬', unlocked: monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0) >= 500000, color: 'text-blue-400' },
+      { id: '6', name: '槓桿戰士', icon: <Zap className="w-5 h-5"/>, desc: '使用融資或質押', unlocked: totalStockDebt > 0, color: 'text-red-400' },
+      { id: '7', name: '財富國王', icon: <Crown className="w-5 h-5"/>, desc: 'FIRE 自由度達 100%', unlocked: fireRatio >= 100, color: 'text-yellow-500' },
+      { id: '8', name: '債務殺手', icon: <Skull className="w-5 h-5"/>, desc: '資產大於總負債', unlocked: totalMarketValue > (totalStockDebt + totalRealDebt), color: 'text-orange-500' },
+  ];
 
   // Allocation & Pie
   const targetDividend = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
@@ -200,49 +181,7 @@ const App: React.FC = () => {
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
 
-  const breakevenTip = useMemo(() => {
-      if (yearlyNetPosition.gte(0)) return null;
-      const deficit = yearlyNetPosition.abs().toNumber();
-      const divEtfs = etfs.filter(e => e.category === 'dividend' && e.shares > 0);
-      let totalInvested = 0; let totalDiv = 0;
-      divEtfs.forEach(e => {
-          const mkt = e.shares * e.currentPrice; const freq = e.dividendType === 'per_period' && e.payMonths.length > 0 ? e.payMonths.length : 1;
-          totalInvested += mkt; totalDiv += e.dividendPerShare * freq * e.shares;
-      });
-      const avgYield = totalInvested > 0 ? totalDiv / totalInvested : 0.06;
-      return { deficit, avgYield: (avgYield * 100).toFixed(1), neededCapital: deficit / avgYield };
-  }, [yearlyNetPosition, etfs]);
-
-  // ★★★ Gamification Logic (New!) ★★★
-  const fireMetrics = useMemo(() => {
-      const annualExpenses = monthlyFlows.reduce((acc, cur) => acc + cur.loanOutflow + cur.creditLoanOutflow + cur.livingExpenses, 0);
-      const annualPassive = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
-      const ratio = annualExpenses > 0 ? (annualPassive / annualExpenses) * 100 : 0;
-      return { ratio, annualExpenses, annualPassive };
-  }, [monthlyFlows]);
-
-  const levelInfo = useMemo(() => {
-      const r = fireMetrics.ratio;
-      if (r >= 100) return { title: '財富國王 👑', color: 'text-yellow-400', bar: 'bg-yellow-400', next: null, desc: '已達成完全財務自由！' };
-      if (r >= 50) return { title: '資產領主 ⚔️', color: 'text-purple-400', bar: 'bg-purple-500', next: 100, desc: '被動收入已覆蓋過半支出。' };
-      if (r >= 20) return { title: '理財騎士 🛡️', color: 'text-blue-400', bar: 'bg-blue-500', next: 50, desc: '防禦力成形，繼續進攻！' };
-      return { title: '初心冒險者 🪵', color: 'text-slate-400', bar: 'bg-slate-500', next: 20, desc: '萬丈高樓平地起。' };
-  }, [fireMetrics]);
-
-  const combatPower = useMemo(() => {
-      const netWorthScore = totalMarketValue / 10000; // 1萬市值 = 1分
-      const cashFlowScore = (fireMetrics.annualPassive / 12) / 100; // 月被動 100元 = 1分
-      return Math.floor(netWorthScore + cashFlowScore);
-  }, [totalMarketValue, fireMetrics]);
-
-  const nextQuest = useMemo(() => {
-      if (!levelInfo.next) return null;
-      const targetPassive = (fireMetrics.annualExpenses * levelInfo.next) / 100;
-      const needed = targetPassive - fireMetrics.annualPassive;
-      return { targetPct: levelInfo.next, amount: needed };
-  }, [levelInfo, fireMetrics]);
-
-  // Charts Data
+  // Charts
   const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
   const snowballData = useMemo(() => {
       const annualDivIncome = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
@@ -271,7 +210,7 @@ const App: React.FC = () => {
      return [{ subject: '現金流', A: Math.floor(yieldScore), fullMark: 100 }, { subject: '安全性', A: Math.floor(safetyScore), fullMark: 100 }, { subject: '成長性', A: Math.floor(growthScore), fullMark: 100 }, { subject: '抗壓性', A: Math.floor(resilienceScore), fullMark: 100 }, { subject: '稅務優勢', A: Math.floor(taxScore), fullMark: 100 }];
   }, [monthlyFlows, totalMarketValue, actualHedging, currentMaintenance, actualActive, stressTestResults, healthInsuranceTotal, incomeTaxTotal]);
 
-  // Handlers
+  // Handlers (Simplified)
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
   const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
   const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
@@ -279,163 +218,141 @@ const App: React.FC = () => {
   const toggleEtfDividendType = (i: number) => { const n = [...etfs]; n[i].dividendType = n[i].dividendType === 'annual' ? 'per_period' : 'annual'; setEtfs(n); };
   const toggleLots = (id: string) => { setExpandedEtfId(expandedEtfId === id ? null : id); if(activeBuyId) setActiveBuyId(null); };
   const toggleBuy = (id: string) => { setActiveBuyId(activeBuyId === id ? null : id); if(expandedEtfId) setExpandedEtfId(null); };
-  
-  // FIX: Check if Hedging to set fee to 0
+  const handleSmartMerge = () => {
+      const currentIds = new Set(etfs.map(e => e.id)); const missingItems = INITIAL_ETFS.filter(e => !currentIds.has(e.id));
+      if (missingItems.length === 0) { alert('您的清單已經很完整了！沒有缺少的預設項目。'); return; }
+      if (window.confirm(`發現 ${missingItems.length} 個新的預設項目。補入？`)) { setEtfs([...etfs, ...missingItems]); setTimeout(() => alert('補全完成！'), 500); }
+  };
+  const handleImportClick = () => fileInputRef.current?.click();
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => { /* (Existing Import Logic) */ 
+    const file = event.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => { try { const json = e.target?.result as string; const state = JSON.parse(json) as AppState; if (state.etfs && state.loans) { setEtfs(state.etfs); setLoans(state.loans); setStockLoan(state.stockLoan||INITIAL_STOCK_LOAN); setGlobalMarginLoan(state.globalMarginLoan||INITIAL_GLOBAL_MARGIN_LOAN); setCreditLoan(state.creditLoan||INITIAL_CREDIT_LOAN); setTaxStatus(state.taxStatus||INITIAL_TAX_STATUS); setAllocation(state.allocation||INITIAL_ALLOCATION); alert('匯入成功！'); } } catch (error) { alert('檔案錯誤'); } }; reader.readAsText(file); event.target.value='';
+  };
+  const handleExport = () => { StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation }); };
+  const handleReset = () => { if(window.confirm('確定重置？')) { setEtfs(INITIAL_ETFS); setLoans(INITIAL_LOANS); setAllocation(INITIAL_ALLOCATION); window.location.reload(); } };
+
+  // FIX: Gold Fee Logic
   const submitBuy = (i: number) => {
     const s = Number(buyForm.shares), p = Number(buyForm.price); if (!s || !p) return;
-    const targetEtf = etfs[i];
-    const fee = targetEtf.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE);
-    
-    const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; 
-    l.push({ id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee }); 
-    const ts = l.reduce((a, b) => a + b.shares, 0); 
-    const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); 
-    n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; 
-    setEtfs(n); setBuyForm({ ...buyForm, shares: '', price: '' }); setActiveBuyId(null); 
+    const targetEtf = etfs[i]; const fee = targetEtf.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE);
+    const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; l.push({ id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee }); 
+    const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); 
+    n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); setBuyForm({ ...buyForm, shares: '', price: '' }); setActiveBuyId(null); 
   };
-  
-  // FIX: Check if Hedging to set fee to 0
   const addLot = (i: number) => { 
     const s = Number(newLot.shares), p = Number(newLot.price); if (!s || !p) return; 
-    const targetEtf = etfs[i];
-    const fee = targetEtf.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE);
-
-    const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; 
-    l.push({ id: Date.now().toString(), date: newLot.date, shares: s, price: p, fee }); 
-    const ts = l.reduce((a, b) => a + b.shares, 0); 
-    const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); 
-    n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; 
-    setEtfs(n); setNewLot({ ...newLot, shares: '', price: '' }); 
+    const targetEtf = etfs[i]; const fee = targetEtf.category === 'hedging' ? 0 : Math.floor(s * p * BROKERAGE_RATE);
+    const n = [...etfs]; const l = n[i].lots ? [...n[i].lots!] : []; l.push({ id: Date.now().toString(), date: newLot.date, shares: s, price: p, fee }); 
+    const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); 
+    n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); setNewLot({ ...newLot, shares: '', price: '' }); 
   };
-
   const removeLot = (i: number, lid: string) => { const n = [...etfs]; const l = n[i].lots!.filter(x => x.id !== lid); const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); };
   const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
 
-  if (isInitializing) return <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400">正在同步雲端資料...</p></div>;
+  if (isInitializing) return <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400">正在同步戰情室...</p></div>;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans selection:bg-emerald-500 selection:text-white">
       
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-           <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg p-6">
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Settings className="w-5 h-5"/> 設定</h3>
+           <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Settings className="w-5 h-5"/> 系統設定</h3>
               <div className="space-y-4">
-                  <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 text-xs">
-                     <p className="text-emerald-300 font-bold">雲端同步已開啟</p>
-                     <p className="text-slate-400">資料安全同步中</p>
+                  <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 text-xs flex items-center gap-3">
+                     <Cloud className="w-5 h-5 text-emerald-400" />
+                     <div><p className="text-emerald-300 font-bold">雲端同步已開啟</p><p className="text-slate-400">您的戰鬥數據已安全備份</p></div>
                   </div>
                   <div>
-                      <label className="block text-xs text-slate-400 mb-1">自動報價來源 (Google Sheet CSV 連結)</label>
-                      <input 
-                        type="text" 
-                        placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" 
-                        value={cloudConfig.priceSourceUrl || ''} 
-                        onChange={(e) => setCloudConfig({...cloudConfig, priceSourceUrl: e.target.value})}
-                        className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-white"
-                      />
-                      <p className="text-[10px] text-slate-500 mt-1">請貼上 Google 試算表「發布到網路」後的 CSV 連結。</p>
+                      <label className="block text-xs text-slate-400 mb-1">自動報價來源 (Google Sheet CSV)</label>
+                      <input type="text" placeholder="https://..." value={cloudConfig.priceSourceUrl || ''} onChange={(e) => setCloudConfig({...cloudConfig, priceSourceUrl: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-white" />
                   </div>
               </div>
-              <button onClick={() => setShowSettings(false)} className="w-full py-2 mt-4 bg-slate-700 rounded hover:bg-slate-600 text-white">儲存並關閉</button>
+              <button onClick={() => setShowSettings(false)} className="w-full py-2 mt-4 bg-slate-700 rounded hover:bg-slate-600 text-white">確認並返回</button>
            </div>
         </div>
       )}
 
-      {showHelp && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-xl p-6"><h3 className="text-xl font-bold mb-4">功能說明</h3><ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm"><li><strong>自動更新現價：</strong> 設定好 Google Sheet 連結後，點擊更新按鈕即可同步最新股價。</li><li><strong>資產雷達：</strong> 五維度分析您的投資組合健康度。</li><li><strong>滾雪球預測：</strong> 模擬未來 10 年資產與股息增長。</li></ul><button onClick={() => setShowHelp(false)} className="mt-4 w-full py-2 bg-slate-700 rounded hover:bg-slate-600">關閉</button></div></div>)}
-
+      {/* Header */}
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐資產配置模型</h1>
-          <div className="flex items-center gap-4 mt-2 flex-wrap">
-             <p className="text-slate-400 hidden sm:block">Python 級高精度運算 • 2025 稅務引擎 • 家族辦公室級儀表板</p>
-             <div className="flex gap-2">
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">{saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}{saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}{saveStatus === 'error' && <><AlertTriangle className="w-3 h-3 text-red-400" /><span className="text-red-400">同步失敗</span></>}{saveStatus === 'idle' && dataSource === 'cloud' && <><Globe className="w-3 h-3 text-blue-400" /><span className="text-blue-400">雲端模式</span></>}</div>
-             </div>
-          </div>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 filter drop-shadow-lg">
+            <Calculator className="w-8 h-8 text-emerald-400" /> 包租唐資產戰情室
+          </h1>
+          <p className="text-slate-400 text-xs mt-1 flex items-center gap-2"><Crown className="w-3 h-3 text-yellow-500" /> 財富自由之路 • 等級 {Math.floor(combatPower/1000)}</p>
         </div>
         <div className="flex flex-wrap gap-2">
            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
-           <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Settings className="w-4 h-4 text-blue-400" /> 設定</button>
-           <button onClick={() => setShowHelp(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><HelpCircle className="w-4 h-4 text-amber-400" /> 說明</button>
-           
+           <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Settings className="w-4 h-4 text-blue-400" /></button>
            <button onClick={handleUpdatePrices} disabled={isUpdatingPrices} className="flex items-center gap-2 px-3 py-2 bg-blue-900/50 hover:bg-blue-800 border border-blue-500/50 rounded-lg text-sm text-blue-300 transition-all shadow-sm hover:shadow-md group">
-               {isUpdatingPrices ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCw className="w-4 h-4 text-blue-300 group-hover:rotate-180 transition-transform duration-700" />}
-               更新現價
+               {isUpdatingPrices ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCw className="w-4 h-4 text-blue-300 group-hover:rotate-180 transition-transform duration-700" />} 更新現價
            </button>
-
-           <button onClick={handleSmartMerge} className="flex items-center gap-2 px-3 py-2 bg-purple-900/50 hover:bg-purple-800 border border-purple-500/50 rounded-lg text-sm text-purple-300 transition-all shadow-sm hover:shadow-md group"><Zap className="w-4 h-4 text-yellow-400 group-hover:scale-110 transition-transform" /> 補全預設</button>
-           <button onClick={handleImportClick} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Upload className="w-4 h-4 text-blue-400" /> 匯入</button>
-           <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Download className="w-4 h-4 text-emerald-400" /> 匯出</button>
-           <button onClick={handleReset} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-red-900/30 border border-slate-600 hover:border-red-500 rounded-lg text-sm transition-all shadow-sm hover:shadow-md group"><RotateCcw className="w-4 h-4 text-red-400 group-hover:rotate-180 transition-transform duration-500" /> 重置</button>
+           <button onClick={handleSmartMerge} className="flex items-center gap-2 px-3 py-2 bg-purple-900/50 hover:bg-purple-800 border border-purple-500/50 rounded-lg text-sm text-purple-300 transition-all shadow-sm hover:shadow-md group"><Zap className="w-4 h-4 text-yellow-400 group-hover:scale-110 transition-transform" /> 補全裝備</button>
+           <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Download className="w-4 h-4 text-emerald-400" /> 存檔</button>
         </div>
       </header>
 
-      {/* ★★★ NEW: Gamification HUD (Heads-Up Display) ★★★ */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+      {/* ★★★ 遊戲化 HUD 儀表板 ★★★ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
           
-          {/* Left: Class & Level */}
-          <div className="bg-gradient-to-r from-slate-800 to-slate-900 p-6 rounded-2xl border border-slate-700 shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Trophy className="w-32 h-32 text-white" /></div>
-              <div className="relative z-10">
-                  <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1 flex items-center gap-2">
-                      <Crown className="w-4 h-4 text-yellow-500" /> 目前階級 (Class)
+          {/* 1. 戰鬥力卡片 */}
+          <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl relative overflow-hidden group">
+              <div className="absolute -right-6 -top-6 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl group-hover:bg-blue-500/30 transition-all"></div>
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1 flex items-center gap-2"><Swords className="w-4 h-4 text-blue-400" /> 綜合戰鬥力</div>
+              <div className="text-5xl font-black text-white font-mono tracking-tighter tabular-nums text-transparent bg-clip-text bg-gradient-to-br from-white to-blue-200">
+                  <AnimatedNumber value={combatPower} />
+              </div>
+              <div className="mt-3 flex gap-2">
+                  <div className="px-2 py-1 rounded bg-slate-900/50 border border-slate-600/50 text-[10px] text-slate-400">資產 {formatMoney(totalMarketValue/10000)}萬</div>
+                  <div className="px-2 py-1 rounded bg-slate-900/50 border border-slate-600/50 text-[10px] text-slate-400">月現 {formatMoney(monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0)/12)}</div>
+              </div>
+          </div>
+
+          {/* 2. 債務魔王血條 */}
+          <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl relative overflow-hidden">
+              <div className="flex justify-between items-end mb-2">
+                  <div className="text-slate-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2"><Skull className="w-4 h-4 text-red-500" /> 債務魔王討伐戰</div>
+                  <div className="text-xs text-red-400 font-mono">剩餘 HP: {formatMoney(Math.max(0, (totalStockDebt + totalRealDebt) - totalMarketValue))}</div>
+              </div>
+              <div className="relative h-6 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-600 box-content">
+                  {/* Boss HP Bar */}
+                  <div className="absolute top-0 left-0 h-full bg-red-600 transition-all duration-1000" style={{width: '100%'}}></div>
+                  {/* Damage Dealt (Assets) */}
+                  <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-500 to-blue-500 transition-all duration-1000 opacity-90 flex items-center justify-end px-2" style={{width: `${Math.min(100, (totalMarketValue / ((totalStockDebt + totalRealDebt) || 1)) * 100)}%`}}>
+                      <span className="text-[10px] font-bold text-white drop-shadow-md">-{((totalMarketValue / ((totalStockDebt + totalRealDebt) || 1)) * 100).toFixed(0)}%</span>
                   </div>
-                  <h2 className={`text-3xl font-extrabold ${levelInfo.color} mb-2`}>{levelInfo.title}</h2>
-                  <p className="text-slate-400 text-sm mb-4">{levelInfo.desc}</p>
-                  
-                  {/* Progress Bar to Next Level */}
-                  <div className="space-y-1">
-                      <div className="flex justify-between text-xs font-bold">
-                          <span className="text-slate-500">自由度 {fireMetrics.ratio.toFixed(1)}%</span>
-                          {levelInfo.next && <span className="text-slate-400">下一級目標: {levelInfo.next}%</span>}
-                      </div>
-                      <div className="h-3 w-full bg-slate-700 rounded-full overflow-hidden border border-slate-600">
-                          <div className={`h-full ${levelInfo.bar} transition-all duration-1000 ease-out`} style={{width: `${Math.min(100, (fireMetrics.ratio / (levelInfo.next || 100)) * 100)}%`}}></div>
-                      </div>
-                      {nextQuest && (
-                          <div className="mt-2 p-2 bg-slate-800/50 rounded-lg border border-slate-600/50 flex items-start gap-2">
-                              <Target className="w-4 h-4 text-red-400 mt-0.5" />
-                              <div className="text-xs text-slate-300">
-                                  <span className="text-red-300 font-bold">下一級任務：</span> 
-                                  再增加年被動收入 <span className="text-emerald-400 font-mono font-bold">{formatMoney(nextQuest.amount)}</span> 即可晉升！
-                              </div>
+              </div>
+              <div className="mt-2 text-xs text-slate-500 text-center">
+                  總負債 <span className="text-red-400">{formatMoney(totalStockDebt + totalRealDebt)}</span> vs 總資產 <span className="text-blue-400">{formatMoney(totalMarketValue)}</span>
+              </div>
+          </div>
+
+          {/* 3. 成就殿堂 */}
+          <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-xl overflow-hidden flex flex-col">
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂</div>
+              <div className="flex-1 grid grid-cols-4 gap-2 overflow-y-auto max-h-[100px]">
+                  {achievements.map(ach => (
+                      <div key={ach.id} className={`aspect-square rounded-xl flex items-center justify-center border transition-all relative group ${ach.unlocked ? `bg-slate-900 ${ach.color} border-${ach.color.split('-')[1]}-500/50 shadow-lg shadow-${ach.color.split('-')[1]}-500/20` : 'bg-slate-900/30 border-slate-800 text-slate-700 grayscale'}`}>
+                          {ach.icon}
+                          {/* Tooltip */}
+                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-32 bg-black/90 text-white text-[10px] p-2 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 text-center border border-slate-700">
+                              <div className={`font-bold mb-1 ${ach.unlocked ? ach.color : 'text-slate-500'}`}>{ach.name}</div>
+                              <div className="text-slate-400">{ach.desc}</div>
                           </div>
-                      )}
-                  </div>
+                      </div>
+                  ))}
               </div>
           </div>
-
-          {/* Right: Combat Power */}
-          <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 rounded-2xl border border-slate-700 shadow-2xl relative overflow-hidden group flex items-center justify-between">
-              <div className="relative z-10">
-                  <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1 flex items-center gap-2">
-                      <Swords className="w-4 h-4 text-red-500" /> 財富戰鬥力 (Combat Power)
-                  </div>
-                  <div className="text-5xl font-black text-white font-mono tracking-tighter tabular-nums text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-400">
-                      {combatPower.toLocaleString()}
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                      <div className="px-2 py-0.5 rounded bg-blue-900/30 border border-blue-500/30 text-[10px] text-blue-300">資產加成 +{formatMoney(totalMarketValue/10000)}</div>
-                      <div className="px-2 py-0.5 rounded bg-emerald-900/30 border border-emerald-500/30 text-[10px] text-emerald-300">現金流加成 +{formatMoney((fireMetrics.annualPassive/12)/100)}</div>
-                  </div>
-              </div>
-              <div className="relative">
-                  <div className="absolute inset-0 bg-blue-500 blur-[60px] opacity-20 animate-pulse"></div>
-                  <Swords className="w-24 h-24 text-slate-700 group-hover:text-slate-600 transition-colors duration-500 transform group-hover:rotate-12" />
-              </div>
-          </div>
-
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        {/* LEFT COLUMN */}
+        {/* LEFT COLUMN: Setup */}
         <div className="xl:col-span-4 space-y-6">
           
-          {/* Wealth Radar */}
+          {/* Radar Chart */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-blue-500 to-cyan-500"></div>
-             <h2 className="text-xl font-semibold mb-2 text-cyan-300 flex items-center gap-2"><ShieldCheck className="w-5 h-5" /> 資產體質雷達</h2>
+             <h2 className="text-xl font-semibold mb-2 text-cyan-300 flex items-center gap-2"><ShieldCheck className="w-5 h-5" /> 屬性雷達</h2>
              <div className="h-64 -ml-4">
                <ResponsiveContainer width="100%" height="100%">
                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
@@ -447,14 +364,12 @@ const App: React.FC = () => {
                  </RadarChart>
                </ResponsiveContainer>
              </div>
-             <div className="text-center text-xs text-slate-400">分數越高代表該面向越強健</div>
           </section>
 
-          {/* Allocation Section */}
-          <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-emerald-500 to-purple-500"></div>
-             <h2 className="text-xl font-semibold mb-4 text-blue-300 flex items-center gap-2"><PieIcon className="w-5 h-5" /> 資金分配規劃</h2>
-             <div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總可用資金 (台幣)</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div></div>
+          {/* Allocation */}
+          <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
+             <h2 className="text-xl font-semibold mb-4 text-blue-300 flex items-center gap-2"><PieIcon className="w-5 h-5" /> 戰略資源分配</h2>
+             <div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總兵力 (資金)</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div></div>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                <div className="h-40 flex justify-center items-center bg-slate-900/30 rounded-xl">
                   {pieData.length > 0 ? (
@@ -466,19 +381,19 @@ const App: React.FC = () => {
                         <Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/>
                       </PieChart>
                     </ResponsiveContainer>
-                  ) : (<div className="text-xs text-slate-500">尚無持倉數據</div>)}
+                  ) : (<div className="text-xs text-slate-500">尚無配置</div>)}
                </div>
                <div className="space-y-3 bg-slate-900/50 rounded-xl p-3 border border-slate-700/50">
-                 <div><div className="flex justify-between text-xs mb-1"><span className="text-emerald-300 font-bold">配息型</span><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-emerald-500 outline-none" /></div><div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend / allocation.totalFunds) * 100)}%`}}></div></div><div className="flex justify-between text-[10px]"><span className="text-slate-400">實: {formatMoney(actualDividend)}</span><span className={`font-mono ${actualDividend < targetDividend ? 'text-red-400' : 'text-emerald-400'}`}>{actualDividend < targetDividend ? `缺 ${formatMoney(targetDividend - actualDividend)}` : '已達標'}</span></div></div>
-                 <div><div className="flex justify-between text-xs mb-1"><span className="text-amber-300 font-bold">避險型</span><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-amber-500 outline-none" /></div><div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging / allocation.totalFunds) * 100)}%`}}></div></div><div className="flex justify-between text-[10px]"><span className="text-slate-400">實: {formatMoney(actualHedging)}</span><span className={`font-mono ${actualHedging < targetHedging ? 'text-red-400' : 'text-emerald-400'}`}>{actualHedging < targetHedging ? `缺 ${formatMoney(targetHedging - actualHedging)}` : '已達標'}</span></div></div>
-                 <div><div className="flex justify-between text-xs mb-1"><span className="text-purple-300 font-bold">主動型</span><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-purple-500 outline-none" /></div><div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive / allocation.totalFunds) * 100)}%`}}></div></div><div className="flex justify-between text-[10px]"><span className="text-slate-400">實: {formatMoney(actualActive)}</span><span className={`font-mono ${actualActive < targetActive ? 'text-red-400' : 'text-emerald-400'}`}>{actualActive < targetActive ? `缺 ${formatMoney(targetActive - actualActive)}` : '已達標'}</span></div></div>
+                 <div><div className="flex justify-between text-xs mb-1"><span className="text-emerald-300 font-bold">配息型</span><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-emerald-500 outline-none" /></div><div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend / allocation.totalFunds) * 100)}%`}}></div></div></div>
+                 <div><div className="flex justify-between text-xs mb-1"><span className="text-amber-300 font-bold">避險型</span><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-amber-500 outline-none" /></div><div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging / allocation.totalFunds) * 100)}%`}}></div></div></div>
+                 <div><div className="flex justify-between text-xs mb-1"><span className="text-purple-300 font-bold">主動型</span><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-purple-500 outline-none" /></div><div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive / allocation.totalFunds) * 100)}%`}}></div></div></div>
                </div>
              </div>
           </section>
 
-          {/* ETF Input */}
+          {/* ETF List */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
-            <h2 className="text-xl font-semibold mb-4 text-emerald-300 flex items-center gap-2"><Activity className="w-5 h-5" /> 資產配置 (ETF)</h2>
+            <h2 className="text-xl font-semibold mb-4 text-emerald-300 flex items-center gap-2"><Activity className="w-5 h-5" /> 裝備清單 (ETF/黃金)</h2>
              <div className="space-y-4">
               {etfs.map((etf, idx) => {
                 const hasLots = etf.lots && etf.lots.length > 0;
@@ -525,13 +440,13 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* Mortgage & Tax Inputs */}
+          {/* Mortgage Config */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-red-300 flex items-center gap-2"><DollarSign className="w-5 h-5" /> 房貸配置</h2>
             <div className="space-y-4">{loans.map((loan, idx) => (<div key={loan.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700"><div className="flex justify-between items-center mb-2"><span className="font-bold text-white">{loan.name}</span><select value={loan.type} onChange={(e) => updateLoan(idx, 'type', e.target.value)} className="bg-slate-800 text-xs border border-slate-600 rounded px-1 text-slate-300"><option value={MortgageType.PrincipalAndInterest}>設定: 本息</option><option value={MortgageType.Principal}>設定: 本金</option></select></div><div className="space-y-2"><div className="grid grid-cols-3 gap-2"><div className="col-span-1"><label className="text-xs text-slate-500">本金</label><input type="number" value={loan.principal} onChange={(e) => updateLoan(idx, 'principal', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div><div className="col-span-2"><label className="text-xs text-emerald-400 block flex items-center gap-1 font-bold"><Calendar className="w-3 h-3"/> 核貸日期</label><input type="date" value={loan.startDate || ''} onChange={(e) => updateLoan(idx, 'startDate', e.target.value)} className="w-full bg-slate-800 border border-emerald-600/50 rounded-lg px-2 py-1 text-sm text-white" /></div></div><div className="grid grid-cols-2 gap-2"><div><label className="text-xs text-slate-500">總期數</label><input type="number" value={loan.totalMonths} onChange={(e) => updateLoan(idx, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div><div><label className="text-xs text-slate-500">已繳</label><input type="number" value={loan.paidMonths} onChange={(e) => updateLoan(idx, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-sm" disabled={!!loan.startDate} /></div></div><div><label className="text-xs text-slate-500">寬限期</label><input type="number" value={loan.gracePeriod} onChange={(e) => updateLoan(idx, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div><div className="bg-slate-800/50 p-2 rounded-lg border border-slate-700/50 grid grid-cols-3 gap-2"><div><label className="text-[10px] text-slate-400">利率1</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-xs" /></div><div><label className="text-[10px] text-slate-400">期間1</label><input type="number" value={loan.rate1Months} onChange={(e) => updateLoan(idx, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-xs" /></div><div><label className="text-[10px] text-slate-400">利率2</label><input type="number" value={loan.rate2} onChange={(e) => updateLoan(idx, 'rate2', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-xs" /></div></div></div></div>))}</div>
           </section>
 
-          {/* ★★★ RESTORED: Credit Loan Section ★★★ */}
+          {/* Credit Loan (Restored) */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
             <h2 className="text-xl font-semibold mb-4 text-orange-300 flex items-center gap-2"><Banknote className="w-5 h-5" /> 信用貸款</h2>
             <div className="p-4 bg-slate-900 rounded-xl border border-slate-700">
@@ -546,7 +461,7 @@ const App: React.FC = () => {
             </div>
            </section>
 
-          {/* ★★★ RESTORED: Stock Loan / Global Margin Sections ★★★ */}
+          {/* Margin & Stock Loan (Restored) */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
              <h2 className="text-xl font-semibold mb-2 text-cyan-300 flex items-center gap-2"><Layers className="w-5 h-5" /> 股票融資 (Margin Trading)</h2>
             <div className="p-4 bg-slate-900 rounded-xl border border-slate-700 mb-4">
@@ -565,10 +480,10 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* Tax & Living Section */}
+          {/* Tax & Living */}
            <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
              <h2 className="text-xl font-semibold mb-4 text-purple-300 flex items-center gap-2"><Wallet className="w-5 h-5" /> 稅務與生活</h2>
-            <div className="p-4 bg-slate-900 rounded-xl border border-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-purple-900/20 hover:border-purple-500/50">
+            <div className="p-4 bg-slate-900 rounded-xl border border-slate-700">
                <div className="grid grid-cols-2 gap-3">
                    <div><label className="text-xs text-slate-400">薪資所得</label><input type="number" value={taxStatus.salaryIncome} onChange={(e) => setTaxStatus({...taxStatus, salaryIncome: Number(e.target.value)})} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div>
                    <div><label className="text-xs text-slate-400">扶養人數</label><input type="number" value={taxStatus.dependents} onChange={(e) => setTaxStatus({...taxStatus, dependents: Number(e.target.value)})} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div>
@@ -583,29 +498,26 @@ const App: React.FC = () => {
         {/* OUTPUT SECTION (RIGHT COLUMN) */}
         <div className="xl:col-span-8 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-md">
               <div className="text-slate-400 text-xs uppercase tracking-wider">年度淨現金部位</div>
-              <div className={`text-2xl font-bold ${yearlyNetPosition.isNegative() ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(yearlyNetPosition)}</div>
+              <div className={`text-2xl font-bold ${yearlyNetPosition.isNegative() ? 'text-red-400' : 'text-emerald-400'}`}><AnimatedNumber value={yearlyNetPosition.toNumber()} /></div>
             </div>
             
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl relative overflow-hidden group">
-              <div className="text-slate-400 text-xs uppercase tracking-wider flex items-center gap-1 z-10 relative"><Flame className="w-3 h-3 text-orange-400"/> FIRE 自由度</div>
-              <div className={`text-2xl font-bold z-10 relative ${fireMetrics.ratio >= 100 ? 'text-orange-400' : 'text-white'}`}>{fireMetrics.ratio.toFixed(1)}%</div>
-              <div className="text-[10px] text-slate-500 mt-1 z-10 relative">被動: {formatMoney(fireMetrics.annualPassive)} / 支出: {formatMoney(fireMetrics.annualExpenses)}</div>
-              <div className="absolute bottom-0 left-0 h-1.5 bg-orange-900/30 w-full">
-                  <div className="h-full bg-gradient-to-r from-orange-600 to-yellow-400" style={{width: `${Math.min(100, fireMetrics.ratio)}%`}}></div>
-              </div>
+            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-md">
+              <div className="text-slate-400 text-xs uppercase tracking-wider flex items-center gap-1"><Flame className="w-3 h-3 text-orange-400"/> FIRE 自由度</div>
+              <div className={`text-2xl font-bold ${fireRatio >= 100 ? 'text-orange-400' : 'text-white'}`}>{fireRatio.toFixed(1)}%</div>
+              <div className="text-[10px] text-slate-500 mt-1">被動: {formatMoney(fireMetrics.annualPassive)}</div>
             </div>
 
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-md">
               <div className="text-slate-400 text-xs uppercase tracking-wider">資產總市值</div>
-              <div className="text-2xl font-bold text-blue-400">{formatMoney(totalMarketValue)}</div>
+              <div className="text-2xl font-bold text-blue-400"><AnimatedNumber value={totalMarketValue} /></div>
               <div className={`text-xs mt-1 ${unrealizedPL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>損益: {unrealizedPL >= 0 ? '+' : ''}{formatMoney(unrealizedPL)}</div>
             </div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-purple-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-purple-500 shadow-md">
               <div className="text-slate-400 text-xs uppercase tracking-wider">預估稅負</div>
-              <div className="text-2xl font-bold text-purple-400">{formatMoney(healthInsuranceTotal.plus(incomeTaxTotal))}</div>
-              <div className="text-xs text-slate-500 mt-1">健保: {formatMoney(healthInsuranceTotal)} | 稅: {formatMoney(incomeTaxTotal)}</div>
+              <div className="text-2xl font-bold text-purple-400"><AnimatedNumber value={healthInsuranceTotal.plus(incomeTaxTotal).toNumber()} /></div>
+              <div className="text-xs text-slate-500 mt-1">健保+所得稅</div>
             </div>
           </div>
           
@@ -614,7 +526,7 @@ const App: React.FC = () => {
           {/* Snowball Chart */}
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg">
              <div className="flex justify-between items-center mb-4">
-                 <h3 className="text-lg font-bold flex items-center gap-2"><TrendingUp className="w-5 h-5 text-indigo-400" /> 十年財富滾雪球預測</h3>
+                 <h3 className="text-lg font-bold flex items-center gap-2"><TrendingUp className="w-5 h-5 text-indigo-400" /> 十年財富滾雪球</h3>
                  <div className="flex items-center gap-2 bg-slate-900 rounded-lg p-1 border border-slate-700">
                      <button onClick={() => setReinvest(false)} className={`px-3 py-1 rounded text-xs transition-colors ${!reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>花掉股息</button>
                      <button onClick={() => setReinvest(true)} className={`px-3 py-1 rounded text-xs transition-colors ${reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>複利投入</button>
@@ -624,14 +536,8 @@ const App: React.FC = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={snowballData}>
                     <defs>
-                      <linearGradient id="colorWealth" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#818cf8" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#34d399" stopOpacity={0.8}/>
-                        <stop offset="95%" stopColor="#34d399" stopOpacity={0}/>
-                      </linearGradient>
+                      <linearGradient id="colorWealth" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.8}/><stop offset="95%" stopColor="#818cf8" stopOpacity={0}/></linearGradient>
+                      <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#34d399" stopOpacity={0.8}/><stop offset="95%" stopColor="#34d399" stopOpacity={0}/></linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                     <XAxis dataKey="year" stroke="#94a3b8" />
@@ -646,7 +552,7 @@ const App: React.FC = () => {
           </div>
 
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg">
-             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Calendar className="w-5 h-5 text-blue-400" /> 每月收支行事曆 (收入 vs 支出)</h3>
+             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Calendar className="w-5 h-5 text-blue-400" /> 每月收支行事曆</h3>
              <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={monthlyChartData}>
@@ -655,8 +561,8 @@ const App: React.FC = () => {
                     <YAxis stroke="#94a3b8" />
                     <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#475569', color: '#f1f5f9' }} formatter={(val: number) => formatMoney(val)} />
                     <Legend />
-                    <Bar dataKey="income" name="總收入 (股息)" fill="#10b981" barSize={20} />
-                    <Bar dataKey="expense" name="總支出 (房貸+生活)" fill="#ef4444" barSize={20} />
+                    <Bar dataKey="income" name="總收入" fill="#10b981" barSize={20} />
+                    <Bar dataKey="expense" name="總支出" fill="#ef4444" barSize={20} />
                     <Line type="monotone" dataKey="net" name="淨現金流" stroke="#3b82f6" strokeWidth={2} dot={{r:3}} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -664,10 +570,9 @@ const App: React.FC = () => {
           </div>
 
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg overflow-x-auto">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><DollarSign className="w-5 h-5 text-blue-400" /> 現金流明細</h3>
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><DollarSign className="w-5 h-5 text-blue-400" /> 現金流明細表</h3>
              <table className="w-full text-sm text-left text-slate-300">
                 <thead className="text-xs text-slate-400 uppercase bg-slate-900">
-                   {/* FIX: Restored missing columns for Credit Loan and Stock Loan */}
                    <tr><th className="px-3 py-3">月</th><th className="px-3 py-3 text-right text-emerald-400">股息</th><th className="px-3 py-3 text-right text-red-400">房貸</th><th className="px-3 py-3 text-right text-orange-400">信貸</th><th className="px-3 py-3 text-right text-blue-400">股貸</th><th className="px-3 py-3 text-right text-orange-300">生活費</th><th className="px-3 py-3 text-right text-purple-400">稅負</th><th className="px-3 py-3 text-right font-bold">淨流</th></tr>
                 </thead>
                 <tbody>
@@ -676,7 +581,6 @@ const App: React.FC = () => {
                          <td className="px-3 py-2">{row.month}</td>
                          <td className="px-3 py-2 text-right text-emerald-400">{row.dividendInflow > 0 ? formatMoney(row.dividendInflow) : '-'}</td>
                          <td className="px-3 py-2 text-right text-red-400">{formatMoney(row.loanOutflow)}</td>
-                         {/* FIX: Restored missing cells */}
                          <td className="px-3 py-2 text-right text-orange-400">{formatMoney(row.creditLoanOutflow)}</td>
                          <td className="px-3 py-2 text-right text-blue-400">{formatMoney(row.stockLoanInterest)}</td>
                          <td className="px-3 py-2 text-right text-orange-300">{row.livingExpenses > 0 ? formatMoney(row.livingExpenses) : '-'}</td>
