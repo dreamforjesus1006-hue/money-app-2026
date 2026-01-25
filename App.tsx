@@ -7,7 +7,7 @@ import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 
-import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame } from 'lucide-react';
+import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, RefreshCw } from 'lucide-react';
 import Decimal from 'decimal.js';
 
 const BROKERAGE_RATE = 0.001425; 
@@ -20,6 +20,11 @@ const COLORS = {
   cash: '#334155'      // Slate
 };
 
+// Extend CloudConfig locally to include priceSourceUrl without changing types.ts immediately
+interface ExtendedCloudConfig extends CloudConfig {
+    priceSourceUrl?: string;
+}
+
 const App: React.FC = () => {
   // Loading States
   const [isInitializing, setIsInitializing] = useState(true);
@@ -28,14 +33,16 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [storageStats, setStorageStats] = useState({ used: 0, total: 5242880 });
   const [dataSource, setDataSource] = useState<'local' | 'cloud' | 'gas'>('local');
-  const [reinvest, setReinvest] = useState(true); // Control for Snowball Chart
+  const [reinvest, setReinvest] = useState(true);
+  const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
 
-  // Cloud Config State
-  const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ 
+  // Cloud Config State (Include Price Source)
+  const [cloudConfig, setCloudConfig] = useState<ExtendedCloudConfig>({ 
     apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
     projectId: 'baozutang-finance', 
     syncId: 'tony1006', 
-    enabled: true 
+    enabled: true,
+    priceSourceUrl: '' // New Field for Google Sheet CSV Link
   });
 
   // Data States
@@ -54,11 +61,19 @@ const App: React.FC = () => {
   const [buyForm, setBuyForm] = useState<{shares: string, price: string, date: string}>({ shares: '', price: '', date: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Initial Load Effect
+  // 1. Initial Load
   useEffect(() => {
     const initData = async () => {
       try {
-        StorageService.saveCloudConfig({ apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', projectId: 'baozutang-finance', syncId: 'tony1006', enabled: true });
+        // Load config including price url
+        const savedConfig = StorageService.loadCloudConfig();
+        if (savedConfig) {
+             setCloudConfig(prev => ({ ...prev, ...savedConfig }));
+        } else {
+             // Force default enabled if nothing saved
+             StorageService.saveCloudConfig(cloudConfig);
+        }
+
         const result = await StorageService.loadData();
         const loadedState = result.data;
         setDataSource(result.source);
@@ -85,17 +100,75 @@ const App: React.FC = () => {
     initData();
   }, []);
 
-  // 2. Auto-save Effect
+  // 2. Auto-save
   useEffect(() => {
     if (isInitializing) return;
     setSaveStatus('saving');
     const currentState: AppState = { etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation };
     const timer = setTimeout(async () => {
-      try { await StorageService.saveData(currentState); setStorageStats(StorageService.getStorageUsage()); setSaveStatus('saved'); setTimeout(() => setSaveStatus('idle'), 2000); } 
+      try { 
+          await StorageService.saveData(currentState); 
+          // Also save config incase price url changed
+          StorageService.saveCloudConfig(cloudConfig);
+          setStorageStats(StorageService.getStorageUsage()); 
+          setSaveStatus('saved'); 
+          setTimeout(() => setSaveStatus('idle'), 2000); 
+      } 
       catch (error) { console.error("Save failed", error); setSaveStatus('error'); }
     }, 1000); 
     return () => clearTimeout(timer);
-  }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation, isInitializing]);
+  }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation, isInitializing, cloudConfig]);
+
+  // ★★★ Feature: Update Prices from Google Sheet CSV ★★★
+  const handleUpdatePrices = async () => {
+      if (!cloudConfig.priceSourceUrl) {
+          alert('請先在「設定」中貼上您的 Google Sheet CSV 發布連結！');
+          setShowSettings(true);
+          return;
+      }
+
+      setIsUpdatingPrices(true);
+      try {
+          const response = await fetch(cloudConfig.priceSourceUrl);
+          const text = await response.text();
+          
+          // Parse CSV (Simple parsing: assume Column A=ID, Column B=Price)
+          const rows = text.split('\n').map(row => row.split(','));
+          const priceMap = new Map<string, number>();
+          
+          rows.forEach(row => {
+              if (row.length >= 2) {
+                  // Clean up quotes and spaces
+                  const id = row[0].replace(/['"\r]/g, '').trim(); 
+                  const priceStr = row[1].replace(/['"\r]/g, '').trim();
+                  const price = parseFloat(priceStr);
+                  if (id && !isNaN(price)) {
+                      priceMap.set(id, price);
+                  }
+              }
+          });
+
+          // Update ETFs
+          let updatedCount = 0;
+          const newEtfs = etfs.map(etf => {
+              const newPrice = priceMap.get(etf.id);
+              if (newPrice !== undefined) {
+                  updatedCount++;
+                  return { ...etf, currentPrice: newPrice };
+              }
+              return etf;
+          });
+
+          setEtfs(newEtfs);
+          alert(`更新完成！共更新了 ${updatedCount} 個標的之現價。`);
+
+      } catch (error) {
+          console.error("Price update failed", error);
+          alert('更新失敗。請檢查您的 Google Sheet 連結是否正確且已發布為 CSV 格式。');
+      } finally {
+          setIsUpdatingPrices(false);
+      }
+  };
 
   const handleImportClick = () => fileInputRef.current?.click();
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,16 +197,12 @@ const App: React.FC = () => {
       }
   };
 
-  // --- Calculations & Memo ---
-  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => {
-    return PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus);
-  }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
-
+  // Calculations
+  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   const stressTestResults = useMemo(() => PortfolioCalculator.runStressTest(etfs, stockLoan, globalMarginLoan), [etfs, stockLoan, globalMarginLoan]);
   const totalMarketValue = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * etf.currentPrice), 0), [etfs]);
   const totalCost = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * (etf.costPrice || 0)), 0), [etfs]);
   const unrealizedPL = totalMarketValue - totalCost;
-  
   const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((acc, e) => acc + (e.marginLoanAmount || 0), 0);
   const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
   const mortgageCoverage = useMemo(() => {
@@ -142,7 +211,7 @@ const App: React.FC = () => {
       return totalLoanOutflow === 0 ? 100 : (totalDividendInflow / totalLoanOutflow) * 100;
   }, [monthlyFlows]);
 
-  // Allocation & Pie Data
+  // Allocation & Pie
   const targetDividend = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
   const targetHedging = Math.floor(allocation.totalFunds * (allocation.hedgingRatio / 100));
   const targetActive = Math.floor(allocation.totalFunds * (allocation.activeRatio / 100));
@@ -151,7 +220,6 @@ const App: React.FC = () => {
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
 
-  // Breakeven Logic
   const breakevenTip = useMemo(() => {
       if (yearlyNetPosition.gte(0)) return null;
       const deficit = yearlyNetPosition.abs().toNumber();
@@ -165,68 +233,37 @@ const App: React.FC = () => {
       return { deficit, avgYield: (avgYield * 100).toFixed(1), neededCapital: deficit / avgYield };
   }, [yearlyNetPosition, etfs]);
 
-  // Monthly Chart Data
+  // Charts Data
   const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
-
-  // ★★★ New Feature 1: Snowball Projection (10 Years) ★★★
+  
   const snowballData = useMemo(() => {
       const annualDivIncome = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
       const avgYield = totalMarketValue > 0 ? annualDivIncome / totalMarketValue : 0.05;
-      const annualSavings = yearlyNetPosition.toNumber() > 0 ? yearlyNetPosition.toNumber() : 0; // Only reinvest positive cash flow
-      
-      const data = [];
-      let currentWealth = totalMarketValue;
-      let currentIncome = annualDivIncome;
-
+      const annualSavings = yearlyNetPosition.toNumber() > 0 ? yearlyNetPosition.toNumber() : 0;
+      const data = []; let currentWealth = totalMarketValue; let currentIncome = annualDivIncome;
       for (let year = 0; year <= 10; year++) {
-          data.push({
-              year: `第${year}年`,
-              wealth: Math.floor(currentWealth),
-              income: Math.floor(currentIncome)
-          });
-          // Growth Logic
-          if (reinvest) {
-              currentWealth = currentWealth * 1.05 + currentIncome + annualSavings; // Assume 5% capital growth + reinvest dividend + savings
-          } else {
-              currentWealth = currentWealth * 1.05 + annualSavings; // Spend dividend, only savings added
-          }
+          data.push({ year: `第${year}年`, wealth: Math.floor(currentWealth), income: Math.floor(currentIncome) });
+          if (reinvest) currentWealth = currentWealth * 1.05 + currentIncome + annualSavings;
+          else currentWealth = currentWealth * 1.05 + annualSavings;
           currentIncome = currentWealth * avgYield;
       }
       return data;
   }, [monthlyFlows, totalMarketValue, yearlyNetPosition, reinvest]);
 
-  // ★★★ New Feature 2: Wealth Radar ★★★
   const radarData = useMemo(() => {
-     // 1. Cash Flow (0-100): Based on Yield. Target 6% = 100.
      const annualDiv = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
      const yieldScore = totalMarketValue > 0 ? Math.min(100, ((annualDiv / totalMarketValue) / 0.06) * 100) : 0;
-     
-     // 2. Safety (0-100): Based on Hedging Ratio & Margin Safety.
-     const hedgeScore = Math.min(100, (actualHedging / (totalMarketValue || 1)) * 500); // 20% hedging = 100
+     const hedgeScore = Math.min(100, (actualHedging / (totalMarketValue || 1)) * 500); 
      const marginScore = currentMaintenance > 200 ? 100 : Math.max(0, (currentMaintenance - 130));
      const safetyScore = (hedgeScore * 0.4) + (marginScore * 0.6);
-
-     // 3. Growth (0-100): Based on Active Allocation
-     const growthScore = Math.min(100, (actualActive / (totalMarketValue || 1)) * 1000); // 10% active = 100
-
-     // 4. Resilience (0-100): Based on Stress Test (Survival of 30% drop)
+     const growthScore = Math.min(100, (actualActive / (totalMarketValue || 1)) * 1000); 
      const drop30 = stressTestResults.find(r => r.dropRate === 30);
      const resilienceScore = drop30 && !drop30.isMarginCall ? 100 : 50;
-
-     // 5. Tax Efficiency (0-100): Lower tax is better.
      const taxRatio = (healthInsuranceTotal.plus(incomeTaxTotal).toNumber() / (annualDiv || 1));
-     const taxScore = Math.max(0, 100 - (taxRatio * 500)); // 20% tax = 0 score, 0% tax = 100 score
-
-     return [
-        { subject: '現金流', A: Math.floor(yieldScore), fullMark: 100 },
-        { subject: '安全性', A: Math.floor(safetyScore), fullMark: 100 },
-        { subject: '成長性', A: Math.floor(growthScore), fullMark: 100 },
-        { subject: '抗壓性', A: Math.floor(resilienceScore), fullMark: 100 },
-        { subject: '稅務優勢', A: Math.floor(taxScore), fullMark: 100 },
-     ];
+     const taxScore = Math.max(0, 100 - (taxRatio * 500)); 
+     return [{ subject: '現金流', A: Math.floor(yieldScore), fullMark: 100 }, { subject: '安全性', A: Math.floor(safetyScore), fullMark: 100 }, { subject: '成長性', A: Math.floor(growthScore), fullMark: 100 }, { subject: '抗壓性', A: Math.floor(resilienceScore), fullMark: 100 }, { subject: '稅務優勢', A: Math.floor(taxScore), fullMark: 100 }];
   }, [monthlyFlows, totalMarketValue, actualHedging, currentMaintenance, actualActive, stressTestResults, healthInsuranceTotal, incomeTaxTotal]);
 
-  // ★★★ New Feature 3: FIRE Progress ★★★
   const fireMetrics = useMemo(() => {
       const annualExpenses = monthlyFlows.reduce((acc, cur) => acc + cur.loanOutflow + cur.creditLoanOutflow + cur.livingExpenses, 0);
       const annualPassive = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
@@ -252,8 +289,33 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 font-sans">
       
-      {showSettings && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"><div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg p-6"><h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Settings className="w-5 h-5"/> 設定</h3><div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 text-xs mb-4"><p className="text-emerald-300 font-bold">雲端同步已開啟</p><p className="text-slate-400">資料安全同步中</p></div><button onClick={() => setShowSettings(false)} className="w-full py-2 bg-slate-700 rounded hover:bg-slate-600 text-white">關閉</button></div></div>)}
-      {showHelp && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-xl p-6"><h3 className="text-xl font-bold mb-4">功能說明</h3><ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm"><li><strong>資產雷達：</strong> 五維度分析您的投資組合健康度。</li><li><strong>滾雪球預測：</strong> 模擬未來 10 年資產與股息增長。</li><li><strong>FIRE 進度：</strong> 計算被動收入覆蓋總支出的比例。</li></ul><button onClick={() => setShowHelp(false)} className="mt-4 w-full py-2 bg-slate-700 rounded hover:bg-slate-600">關閉</button></div></div>)}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+           <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg p-6">
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Settings className="w-5 h-5"/> 設定</h3>
+              <div className="space-y-4">
+                  <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 text-xs">
+                     <p className="text-emerald-300 font-bold">雲端同步已開啟</p>
+                     <p className="text-slate-400">資料安全同步中</p>
+                  </div>
+                  <div>
+                      <label className="block text-xs text-slate-400 mb-1">自動報價來源 (Google Sheet CSV 連結)</label>
+                      <input 
+                        type="text" 
+                        placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" 
+                        value={cloudConfig.priceSourceUrl || ''} 
+                        onChange={(e) => setCloudConfig({...cloudConfig, priceSourceUrl: e.target.value})}
+                        className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-white"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">請貼上 Google 試算表「發布到網路」後的 CSV 連結。</p>
+                  </div>
+              </div>
+              <button onClick={() => setShowSettings(false)} className="w-full py-2 mt-4 bg-slate-700 rounded hover:bg-slate-600 text-white">儲存並關閉</button>
+           </div>
+        </div>
+      )}
+
+      {showHelp && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"><div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-xl p-6"><h3 className="text-xl font-bold mb-4">功能說明</h3><ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm"><li><strong>自動更新現價：</strong> 設定好 Google Sheet 連結後，點擊更新按鈕即可同步最新股價。</li><li><strong>資產雷達：</strong> 五維度分析您的投資組合健康度。</li><li><strong>滾雪球預測：</strong> 模擬未來 10 年資產與股息增長。</li></ul><button onClick={() => setShowHelp(false)} className="mt-4 w-full py-2 bg-slate-700 rounded hover:bg-slate-600">關閉</button></div></div>)}
 
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -269,6 +331,13 @@ const App: React.FC = () => {
            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
            <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Settings className="w-4 h-4 text-blue-400" /> 設定</button>
            <button onClick={() => setShowHelp(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><HelpCircle className="w-4 h-4 text-amber-400" /> 說明</button>
+           
+           {/* ★★★ New Button: Update Prices ★★★ */}
+           <button onClick={handleUpdatePrices} disabled={isUpdatingPrices} className="flex items-center gap-2 px-3 py-2 bg-blue-900/50 hover:bg-blue-800 border border-blue-500/50 rounded-lg text-sm text-blue-300 transition-all shadow-sm hover:shadow-md group">
+               {isUpdatingPrices ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCw className="w-4 h-4 text-blue-300 group-hover:rotate-180 transition-transform duration-700" />}
+               更新現價
+           </button>
+
            <button onClick={handleSmartMerge} className="flex items-center gap-2 px-3 py-2 bg-purple-900/50 hover:bg-purple-800 border border-purple-500/50 rounded-lg text-sm text-purple-300 transition-all shadow-sm hover:shadow-md group"><Zap className="w-4 h-4 text-yellow-400 group-hover:scale-110 transition-transform" /> 補全預設</button>
            <button onClick={handleImportClick} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Upload className="w-4 h-4 text-blue-400" /> 匯入</button>
            <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Download className="w-4 h-4 text-emerald-400" /> 匯出</button>
@@ -280,7 +349,7 @@ const App: React.FC = () => {
         {/* LEFT COLUMN */}
         <div className="xl:col-span-4 space-y-6">
           
-          {/* ★★★ NEW: Wealth Radar ★★★ */}
+          {/* Wealth Radar */}
           <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg relative overflow-hidden">
              <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-blue-500 to-cyan-500"></div>
              <h2 className="text-xl font-semibold mb-2 text-cyan-300 flex items-center gap-2"><ShieldCheck className="w-5 h-5" /> 資產體質雷達</h2>
@@ -402,12 +471,10 @@ const App: React.FC = () => {
               <div className={`text-2xl font-bold ${yearlyNetPosition.isNegative() ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(yearlyNetPosition)}</div>
             </div>
             
-            {/* ★★★ NEW: FIRE Progress Card ★★★ */}
             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl relative overflow-hidden group">
               <div className="text-slate-400 text-xs uppercase tracking-wider flex items-center gap-1 z-10 relative"><Flame className="w-3 h-3 text-orange-400"/> FIRE 自由度</div>
               <div className={`text-2xl font-bold z-10 relative ${fireMetrics.ratio >= 100 ? 'text-orange-400' : 'text-white'}`}>{fireMetrics.ratio.toFixed(1)}%</div>
               <div className="text-[10px] text-slate-500 mt-1 z-10 relative">被動: {formatMoney(fireMetrics.annualPassive)} / 支出: {formatMoney(fireMetrics.annualExpenses)}</div>
-              {/* Progress Bar Background */}
               <div className="absolute bottom-0 left-0 h-1.5 bg-orange-900/30 w-full">
                   <div className="h-full bg-gradient-to-r from-orange-600 to-yellow-400" style={{width: `${Math.min(100, fireMetrics.ratio)}%`}}></div>
               </div>
@@ -427,7 +494,7 @@ const App: React.FC = () => {
           
           {breakevenTip && (<div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-start gap-4 shadow-lg animate-in fade-in slide-in-from-bottom-2"><div className="bg-yellow-500/20 p-2 rounded-full"><Lightbulb className="w-6 h-6 text-yellow-400" /></div><div><h4 className="font-bold text-white mb-1">現金流優化建議 (轉虧為盈)</h4><p className="text-sm text-slate-400 leading-relaxed">目前年度現金流短缺 <span className="text-red-400 font-bold">{formatMoney(breakevenTip.deficit)}</span>。以您目前配息型標的平均殖利率 <span className="text-emerald-400 font-bold">{breakevenTip.avgYield}%</span> 計算，建議再投入本金約 <span className="text-blue-400 font-bold text-lg">{formatMoney(breakevenTip.neededCapital)}</span> 即可達成現金流平衡。</p></div></div>)}
 
-          {/* ★★★ NEW: Snowball Projection Chart ★★★ */}
+          {/* Snowball Chart */}
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg">
              <div className="flex justify-between items-center mb-4">
                  <h3 className="text-lg font-bold flex items-center gap-2"><TrendingUp className="w-5 h-5 text-indigo-400" /> 十年財富滾雪球預測</h3>
