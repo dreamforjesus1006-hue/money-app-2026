@@ -1,6 +1,5 @@
-// ↓↓↓ 新增：定義 ETF 的三種分類 ↓↓↓
+// types.ts 全選貼上
 export type EtfCategory = 'dividend' | 'hedging' | 'active';
-// ↑↑↑ 新增結束 ↑↑↑
 
 export interface Lot {
   id: string;
@@ -22,9 +21,7 @@ export interface ETF {
   marginLoanAmount?: number;
   marginInterestRate?: number;
   lots?: Lot[];
-  // ↓↓↓ 新增：每檔 ETF 都要有一個分類 ↓↓↓
   category?: EtfCategory; 
-  // ↑↑↑ 新增結束 ↑↑↑
 }
 
 export enum MortgageType {
