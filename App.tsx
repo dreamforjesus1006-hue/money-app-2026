@@ -7,7 +7,7 @@ import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 
-import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, RefreshCw } from 'lucide-react';
+import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, RefreshCw, Trophy, Crown, Swords, ArrowUpCircle } from 'lucide-react';
 import Decimal from 'decimal.js';
 
 const BROKERAGE_RATE = 0.001425; 
@@ -20,7 +20,6 @@ const COLORS = {
   cash: '#334155'      // Slate
 };
 
-// Extend CloudConfig locally to include priceSourceUrl
 interface ExtendedCloudConfig extends CloudConfig {
     priceSourceUrl?: string;
 }
@@ -214,6 +213,35 @@ const App: React.FC = () => {
       return { deficit, avgYield: (avgYield * 100).toFixed(1), neededCapital: deficit / avgYield };
   }, [yearlyNetPosition, etfs]);
 
+  // ★★★ Gamification Logic (New!) ★★★
+  const fireMetrics = useMemo(() => {
+      const annualExpenses = monthlyFlows.reduce((acc, cur) => acc + cur.loanOutflow + cur.creditLoanOutflow + cur.livingExpenses, 0);
+      const annualPassive = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
+      const ratio = annualExpenses > 0 ? (annualPassive / annualExpenses) * 100 : 0;
+      return { ratio, annualExpenses, annualPassive };
+  }, [monthlyFlows]);
+
+  const levelInfo = useMemo(() => {
+      const r = fireMetrics.ratio;
+      if (r >= 100) return { title: '財富國王 👑', color: 'text-yellow-400', bar: 'bg-yellow-400', next: null, desc: '已達成完全財務自由！' };
+      if (r >= 50) return { title: '資產領主 ⚔️', color: 'text-purple-400', bar: 'bg-purple-500', next: 100, desc: '被動收入已覆蓋過半支出。' };
+      if (r >= 20) return { title: '理財騎士 🛡️', color: 'text-blue-400', bar: 'bg-blue-500', next: 50, desc: '防禦力成形，繼續進攻！' };
+      return { title: '初心冒險者 🪵', color: 'text-slate-400', bar: 'bg-slate-500', next: 20, desc: '萬丈高樓平地起。' };
+  }, [fireMetrics]);
+
+  const combatPower = useMemo(() => {
+      const netWorthScore = totalMarketValue / 10000; // 1萬市值 = 1分
+      const cashFlowScore = (fireMetrics.annualPassive / 12) / 100; // 月被動 100元 = 1分
+      return Math.floor(netWorthScore + cashFlowScore);
+  }, [totalMarketValue, fireMetrics]);
+
+  const nextQuest = useMemo(() => {
+      if (!levelInfo.next) return null;
+      const targetPassive = (fireMetrics.annualExpenses * levelInfo.next) / 100;
+      const needed = targetPassive - fireMetrics.annualPassive;
+      return { targetPct: levelInfo.next, amount: needed };
+  }, [levelInfo, fireMetrics]);
+
   // Charts Data
   const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
   const snowballData = useMemo(() => {
@@ -242,12 +270,6 @@ const App: React.FC = () => {
      const taxScore = Math.max(0, 100 - (taxRatio * 500)); 
      return [{ subject: '現金流', A: Math.floor(yieldScore), fullMark: 100 }, { subject: '安全性', A: Math.floor(safetyScore), fullMark: 100 }, { subject: '成長性', A: Math.floor(growthScore), fullMark: 100 }, { subject: '抗壓性', A: Math.floor(resilienceScore), fullMark: 100 }, { subject: '稅務優勢', A: Math.floor(taxScore), fullMark: 100 }];
   }, [monthlyFlows, totalMarketValue, actualHedging, currentMaintenance, actualActive, stressTestResults, healthInsuranceTotal, incomeTaxTotal]);
-  const fireMetrics = useMemo(() => {
-      const annualExpenses = monthlyFlows.reduce((acc, cur) => acc + cur.loanOutflow + cur.creditLoanOutflow + cur.livingExpenses, 0);
-      const annualPassive = monthlyFlows.reduce((acc, cur) => acc + cur.dividendInflow, 0);
-      const ratio = annualExpenses > 0 ? (annualPassive / annualExpenses) * 100 : 0;
-      return { ratio, annualExpenses, annualPassive };
-  }, [monthlyFlows]);
 
   // Handlers
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
@@ -348,6 +370,63 @@ const App: React.FC = () => {
            <button onClick={handleReset} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-red-900/30 border border-slate-600 hover:border-red-500 rounded-lg text-sm transition-all shadow-sm hover:shadow-md group"><RotateCcw className="w-4 h-4 text-red-400 group-hover:rotate-180 transition-transform duration-500" /> 重置</button>
         </div>
       </header>
+
+      {/* ★★★ NEW: Gamification HUD (Heads-Up Display) ★★★ */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+          
+          {/* Left: Class & Level */}
+          <div className="bg-gradient-to-r from-slate-800 to-slate-900 p-6 rounded-2xl border border-slate-700 shadow-2xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><Trophy className="w-32 h-32 text-white" /></div>
+              <div className="relative z-10">
+                  <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1 flex items-center gap-2">
+                      <Crown className="w-4 h-4 text-yellow-500" /> 目前階級 (Class)
+                  </div>
+                  <h2 className={`text-3xl font-extrabold ${levelInfo.color} mb-2`}>{levelInfo.title}</h2>
+                  <p className="text-slate-400 text-sm mb-4">{levelInfo.desc}</p>
+                  
+                  {/* Progress Bar to Next Level */}
+                  <div className="space-y-1">
+                      <div className="flex justify-between text-xs font-bold">
+                          <span className="text-slate-500">自由度 {fireMetrics.ratio.toFixed(1)}%</span>
+                          {levelInfo.next && <span className="text-slate-400">下一級目標: {levelInfo.next}%</span>}
+                      </div>
+                      <div className="h-3 w-full bg-slate-700 rounded-full overflow-hidden border border-slate-600">
+                          <div className={`h-full ${levelInfo.bar} transition-all duration-1000 ease-out`} style={{width: `${Math.min(100, (fireMetrics.ratio / (levelInfo.next || 100)) * 100)}%`}}></div>
+                      </div>
+                      {nextQuest && (
+                          <div className="mt-2 p-2 bg-slate-800/50 rounded-lg border border-slate-600/50 flex items-start gap-2">
+                              <Target className="w-4 h-4 text-red-400 mt-0.5" />
+                              <div className="text-xs text-slate-300">
+                                  <span className="text-red-300 font-bold">下一級任務：</span> 
+                                  再增加年被動收入 <span className="text-emerald-400 font-mono font-bold">{formatMoney(nextQuest.amount)}</span> 即可晉升！
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+
+          {/* Right: Combat Power */}
+          <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 rounded-2xl border border-slate-700 shadow-2xl relative overflow-hidden group flex items-center justify-between">
+              <div className="relative z-10">
+                  <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1 flex items-center gap-2">
+                      <Swords className="w-4 h-4 text-red-500" /> 財富戰鬥力 (Combat Power)
+                  </div>
+                  <div className="text-5xl font-black text-white font-mono tracking-tighter tabular-nums text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-400">
+                      {combatPower.toLocaleString()}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                      <div className="px-2 py-0.5 rounded bg-blue-900/30 border border-blue-500/30 text-[10px] text-blue-300">資產加成 +{formatMoney(totalMarketValue/10000)}</div>
+                      <div className="px-2 py-0.5 rounded bg-emerald-900/30 border border-emerald-500/30 text-[10px] text-emerald-300">現金流加成 +{formatMoney((fireMetrics.annualPassive/12)/100)}</div>
+                  </div>
+              </div>
+              <div className="relative">
+                  <div className="absolute inset-0 bg-blue-500 blur-[60px] opacity-20 animate-pulse"></div>
+                  <Swords className="w-24 h-24 text-slate-700 group-hover:text-slate-600 transition-colors duration-500 transform group-hover:rotate-12" />
+              </div>
+          </div>
+
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         {/* LEFT COLUMN */}
@@ -588,7 +667,8 @@ const App: React.FC = () => {
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><DollarSign className="w-5 h-5 text-blue-400" /> 現金流明細</h3>
              <table className="w-full text-sm text-left text-slate-300">
                 <thead className="text-xs text-slate-400 uppercase bg-slate-900">
-                   <tr><th className="px-3 py-3">月</th><th className="px-3 py-3 text-right text-emerald-400">股息</th><th className="px-3 py-3 text-right text-red-400">房貸</th><th className="px-3 py-3 text-right text-orange-400">生活費</th><th className="px-3 py-3 text-right text-purple-400">稅負</th><th className="px-3 py-3 text-right font-bold">淨流</th></tr>
+                   {/* FIX: Restored missing columns for Credit Loan and Stock Loan */}
+                   <tr><th className="px-3 py-3">月</th><th className="px-3 py-3 text-right text-emerald-400">股息</th><th className="px-3 py-3 text-right text-red-400">房貸</th><th className="px-3 py-3 text-right text-orange-400">信貸</th><th className="px-3 py-3 text-right text-blue-400">股貸</th><th className="px-3 py-3 text-right text-orange-300">生活費</th><th className="px-3 py-3 text-right text-purple-400">稅負</th><th className="px-3 py-3 text-right font-bold">淨流</th></tr>
                 </thead>
                 <tbody>
                    {monthlyFlows.map((row) => (
@@ -596,7 +676,10 @@ const App: React.FC = () => {
                          <td className="px-3 py-2">{row.month}</td>
                          <td className="px-3 py-2 text-right text-emerald-400">{row.dividendInflow > 0 ? formatMoney(row.dividendInflow) : '-'}</td>
                          <td className="px-3 py-2 text-right text-red-400">{formatMoney(row.loanOutflow)}</td>
-                         <td className="px-3 py-2 text-right text-orange-400">{row.livingExpenses > 0 ? formatMoney(row.livingExpenses) : '-'}</td>
+                         {/* FIX: Restored missing cells */}
+                         <td className="px-3 py-2 text-right text-orange-400">{formatMoney(row.creditLoanOutflow)}</td>
+                         <td className="px-3 py-2 text-right text-blue-400">{formatMoney(row.stockLoanInterest)}</td>
+                         <td className="px-3 py-2 text-right text-orange-300">{row.livingExpenses > 0 ? formatMoney(row.livingExpenses) : '-'}</td>
                          <td className="px-3 py-2 text-right text-purple-400">{row.taxWithheld > 0 ? formatMoney(row.taxWithheld) : '-'}</td>
                          <td className={`px-3 py-2 text-right font-bold ${row.netFlow < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(row.netFlow)}</td>
                       </tr>
