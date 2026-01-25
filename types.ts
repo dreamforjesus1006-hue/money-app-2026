@@ -61,6 +61,7 @@ export interface TaxStatus {
   dependents: number;
   hasSpouse: boolean;
   isDisabled: boolean;
+  livingExpenses: number; // ★★★ 新增：每月生活費 ★★★
 }
 
 export interface AllocationConfig {
@@ -87,6 +88,7 @@ export interface MonthlyCashFlow {
   creditLoanOutflow: number;
   stockLoanInterest: number;
   taxWithheld: number;
+  livingExpenses: number; // ★★★ 新增：生活費支出 ★★★
   netFlow: number;
   cumulativeBalance: number;
 }
