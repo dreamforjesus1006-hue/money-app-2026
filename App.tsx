@@ -1,3 +1,4 @@
+// App.tsx 全選貼上
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell, Sector } from 'recharts';
 import { INITIAL_ETFS, INITIAL_LOANS, INITIAL_STOCK_LOAN, INITIAL_CREDIT_LOAN, INITIAL_TAX_STATUS, INITIAL_GLOBAL_MARGIN_LOAN, INITIAL_ALLOCATION } from './constants';
@@ -35,7 +36,7 @@ const App: React.FC = () => {
   const [storageStats, setStorageStats] = useState({ used: 0, total: 5242880 });
   const [dataSource, setDataSource] = useState<'local' | 'cloud' | 'gas'>('local');
 
-  // Cloud Config State
+  // Cloud Config State (強制開啟)
   const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ 
     apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
     projectId: 'baozutang-finance', 
@@ -67,19 +68,24 @@ const App: React.FC = () => {
   useEffect(() => {
     const initData = async () => {
       try {
-        const savedCloudConfig = StorageService.loadCloudConfig();
-        if (savedCloudConfig) setCloudConfig(savedCloudConfig);
+        // ★★★ 核心修復：強制把「開啟」的設定寫入硬碟，讓引擎不得不連線 ★★★
+        StorageService.saveCloudConfig({ 
+            apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
+            projectId: 'baozutang-finance', 
+            syncId: 'tony1006', 
+            enabled: true 
+        });
+        // ★★★ 修復結束 ★★★
 
         const result = await StorageService.loadData();
         const loadedState = result.data;
         setDataSource(result.source);
 
         if (loadedState) {
-          // Initialize ETFs and ensure category exists
           const loadedEtfs = loadedState.etfs || INITIAL_ETFS;
           const sanitizedEtfs = loadedEtfs.map(e => ({
              ...e,
-             category: e.category || 'dividend' // Default to dividend if missing
+             category: e.category || 'dividend' 
           }));
           setEtfs(sanitizedEtfs);
           
@@ -191,16 +197,14 @@ const App: React.FC = () => {
      return (totalMarketValue / totalStockDebt) * 100;
   }, [totalMarketValue, totalStockDebt]);
 
-  // --- Allocation Logic (Goal vs Reality) ---
+  // --- Allocation Logic ---
   const allocationSum = allocation.dividendRatio + allocation.hedgingRatio + allocation.activeRatio;
   const isAllocationValid = allocationSum === 100;
   
-  // Targets
   const targetDividend = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
   const targetHedging = Math.floor(allocation.totalFunds * (allocation.hedgingRatio / 100));
   const targetActive = Math.floor(allocation.totalFunds * (allocation.activeRatio / 100));
 
-  // Actuals
   const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
@@ -211,13 +215,12 @@ const App: React.FC = () => {
     { name: '主動型', value: actualActive, color: COLORS.active },
   ].filter(d => d.value > 0);
 
-  // --- Breakeven Logic (Investment Tip) ---
+  // --- Breakeven Logic ---
   const breakevenTip = useMemo(() => {
-      if (yearlyNetPosition.gte(0)) return null; // No problem
+      if (yearlyNetPosition.gte(0)) return null;
 
       const deficit = yearlyNetPosition.abs().toNumber();
       
-      // Calculate avg dividend yield of 'dividend' category
       const divEtfs = etfs.filter(e => e.category === 'dividend' && e.shares > 0);
       let totalInvested = 0;
       let totalDiv = 0;
@@ -228,14 +231,13 @@ const App: React.FC = () => {
           if (e.dividendType === 'per_period') {
               annualDiv = e.dividendPerShare * e.payMonths.length * e.shares;
           } else {
-              // rough estimate for annual
               annualDiv = e.dividendPerShare * e.shares; 
           }
           totalInvested += mkt;
           totalDiv += annualDiv;
       });
 
-      const avgYield = totalInvested > 0 ? totalDiv / totalInvested : 0.06; // Default to 6% if no data
+      const avgYield = totalInvested > 0 ? totalDiv / totalInvested : 0.06;
       const neededCapital = deficit / avgYield;
 
       return {
@@ -266,7 +268,7 @@ const App: React.FC = () => {
         marginLoanAmount: 0,
         marginInterestRate: 0,
         lots: [],
-        category: 'dividend' // Default
+        category: 'dividend'
     };
     setEtfs([...etfs, newEtf]);
   };
