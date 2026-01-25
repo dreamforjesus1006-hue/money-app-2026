@@ -1,4 +1,3 @@
-// App.tsx 全選貼上
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, ReferenceLine, PieChart, Pie, Cell, Sector } from 'recharts';
 import { INITIAL_ETFS, INITIAL_LOANS, INITIAL_STOCK_LOAN, INITIAL_CREDIT_LOAN, INITIAL_TAX_STATUS, INITIAL_GLOBAL_MARGIN_LOAN, INITIAL_ALLOCATION } from './constants';
@@ -8,7 +7,7 @@ import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 
-import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb } from 'lucide-react';
+import { Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, Edit3, PieChart as PieIcon, Target, Lightbulb, Zap } from 'lucide-react';
 import Decimal from 'decimal.js';
 
 const BROKERAGE_RATE = 0.001425; 
@@ -68,14 +67,13 @@ const App: React.FC = () => {
   useEffect(() => {
     const initData = async () => {
       try {
-        // ★★★ 核心修復：強制把「開啟」的設定寫入硬碟，讓引擎不得不連線 ★★★
+        // 強制寫入開啟設定
         StorageService.saveCloudConfig({ 
             apiKey: 'AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0', 
             projectId: 'baozutang-finance', 
             syncId: 'tony1006', 
             enabled: true 
         });
-        // ★★★ 修復結束 ★★★
 
         const result = await StorageService.loadData();
         const loadedState = result.data;
@@ -197,6 +195,14 @@ const App: React.FC = () => {
      return (totalMarketValue / totalStockDebt) * 100;
   }, [totalMarketValue, totalStockDebt]);
 
+  // --- Feature 2: Mortgage Coverage Ratio ---
+  const mortgageCoverage = useMemo(() => {
+      const totalDividendInflow = monthlyFlows.reduce((acc, curr) => acc + curr.dividendInflow, 0);
+      const totalLoanOutflow = monthlyFlows.reduce((acc, curr) => acc + curr.loanOutflow + curr.creditLoanOutflow, 0);
+      if (totalLoanOutflow === 0) return 100;
+      return (totalDividendInflow / totalLoanOutflow) * 100;
+  }, [monthlyFlows]);
+
   // --- Allocation Logic ---
   const allocationSum = allocation.dividendRatio + allocation.hedgingRatio + allocation.activeRatio;
   const isAllocationValid = allocationSum === 100;
@@ -271,6 +277,23 @@ const App: React.FC = () => {
         category: 'dividend'
     };
     setEtfs([...etfs, newEtf]);
+  };
+
+  // ★★★ Feature 1: Smart Merge Handler ★★★
+  const handleSmartMerge = () => {
+      const currentIds = new Set(etfs.map(e => e.id));
+      const missingItems = INITIAL_ETFS.filter(e => !currentIds.has(e.id));
+      
+      if (missingItems.length === 0) {
+          alert('您的清單已經很完整了！沒有缺少的預設項目。');
+          return;
+      }
+
+      if (window.confirm(`發現 ${missingItems.length} 個新的預設項目 (如: 黃金、美債)。\n是否要將它們補入您的清單？\n(您的舊資料絕對安全，不會被刪除)`)) {
+          setEtfs([...etfs, ...missingItems]);
+          // 給個小提示
+          setTimeout(() => alert('補全完成！請往下滑查看新增的項目。'), 500);
+      }
   };
 
   const removeEtf = (id: string) => {
@@ -524,8 +547,8 @@ const App: React.FC = () => {
               <h3 className="text-xl font-bold mb-4">功能說明</h3>
               <ul className="list-disc pl-5 space-y-2 text-slate-300 text-sm">
                  <li><strong>資金分配規劃：</strong> 設定您的理想比例，系統會自動比對下方的實際持倉，計算達成率。</li>
-                 <li><strong>資產標籤：</strong> 在每檔 ETF 卡片上，可以選擇它是「配息型」、「避險型」或「主動型」。</li>
-                 <li><strong>自動補水建議：</strong> 如果年度現金流為負，系統會根據您目前的平均殖利率，計算出還需要投入多少本金才能轉正。</li>
+                 <li><strong>智能補全：</strong> 點擊上方紫色按鈕，可自動加入缺少的黃金或美債項目，不會影響現有資料。</li>
+                 <li><strong>房貸覆蓋率：</strong> 儀表板新增指標，顯示您的股息收入能覆蓋多少房貸支出。</li>
               </ul>
               <button onClick={() => setShowHelp(false)} className="mt-4 w-full py-2 bg-slate-700 rounded hover:bg-slate-600">關閉</button>
            </div>
@@ -556,6 +579,9 @@ const App: React.FC = () => {
            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
            <button onClick={() => setShowSettings(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Settings className="w-4 h-4 text-blue-400" /> 設定</button>
            <button onClick={() => setShowHelp(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><HelpCircle className="w-4 h-4 text-amber-400" /> 說明</button>
+           {/* ★★★ Smart Merge Button ★★★ */}
+           <button onClick={handleSmartMerge} className="flex items-center gap-2 px-3 py-2 bg-purple-900/50 hover:bg-purple-800 border border-purple-500/50 rounded-lg text-sm text-purple-300 transition-all shadow-sm hover:shadow-md group"><Zap className="w-4 h-4 text-yellow-400 group-hover:scale-110 transition-transform" /> 補全預設</button>
+           
            <button onClick={handleImportClick} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Upload className="w-4 h-4 text-blue-400" /> 匯入</button>
            <button onClick={handleExport} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white border border-slate-600 rounded-lg text-sm text-slate-300 transition-all shadow-sm hover:shadow-md"><Download className="w-4 h-4 text-emerald-400" /> 匯出</button>
            <button onClick={handleReset} className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-red-900/30 border border-slate-600 hover:border-red-500 rounded-lg text-sm transition-all shadow-sm hover:shadow-md group"><RotateCcw className="w-4 h-4 text-red-400 group-hover:rotate-180 transition-transform duration-500" /> 重置</button>
@@ -686,9 +712,10 @@ const App: React.FC = () => {
                 const isExpanded = expandedEtfId === etf.id;
                 const isBuying = activeBuyId === etf.id;
                 const isPerPeriod = etf.dividendType === 'per_period';
+                const isHedging = etf.category === 'hedging'; // ★★★ Check for Hedging
 
                 return (
-                  <div key={etf.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-emerald-900/20 hover:border-emerald-500/50 group">
+                  <div key={etf.id} className={`p-4 bg-slate-900 rounded-xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-lg group ${isHedging ? 'border-amber-500/50 hover:shadow-amber-900/20' : 'border-slate-700 hover:shadow-emerald-900/20 hover:border-emerald-500/50'}`}>
                     <div className="flex justify-between items-center mb-2">
                       <div className="flex items-center gap-2 flex-1">
                         {/* Name Input */}
@@ -729,7 +756,7 @@ const App: React.FC = () => {
                           <h4 className="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-2"><ShoppingCart className="w-3 h-3" /> 新增買入紀錄</h4>
                           <div className="grid grid-cols-3 gap-2 mb-2">
                             <div><label className="text-[10px] text-slate-400 block mb-1">日期</label><input type="date" value={buyForm.date} onChange={e => setBuyForm({...buyForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white" /></div>
-                            <div><label className="text-[10px] text-slate-400 block mb-1">股數</label><input type="number" placeholder="0" value={buyForm.shares} onChange={e => setBuyForm({...buyForm, shares: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white" /></div>
+                            <div><label className="text-[10px] text-slate-400 block mb-1">{isHedging ? '重量 (克/兩)' : '股數'}</label><input type="number" placeholder="0" value={buyForm.shares} onChange={e => setBuyForm({...buyForm, shares: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white" /></div>
                             <div><label className="text-[10px] text-slate-400 block mb-1">單價</label><input type="number" placeholder="0" value={buyForm.price} onChange={e => setBuyForm({...buyForm, price: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-xs text-white" /></div>
                           </div>
                           <button onClick={() => submitBuy(idx)} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded-lg text-xs flex items-center justify-center gap-2 transition-colors font-bold"><CheckCircle2 className="w-3 h-3" /> 確認買入</button>
@@ -737,11 +764,12 @@ const App: React.FC = () => {
                     )}
                     
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                      <div><label className="text-xs text-slate-500 block">股數</label><input type="number" value={etf.shares} onChange={(e) => updateEtf(idx, 'shares', Number(e.target.value))} disabled={hasLots} className={`w-full bg-slate-800 border rounded-lg px-2 py-1 text-sm ${hasLots ? 'border-slate-700 text-slate-400 cursor-not-allowed' : 'border-slate-600'}`} /></div>
-                      <div><label className="text-xs text-slate-500 block">持有成本</label><input type="number" value={etf.costPrice} onChange={(e) => updateEtf(idx, 'costPrice', Number(e.target.value))} disabled={hasLots} className={`w-full bg-slate-800 border rounded-lg px-2 py-1 text-sm ${hasLots ? 'border-slate-700 text-slate-400 cursor-not-allowed' : 'border-slate-600'}`} /></div>
+                      <div><label className="text-xs text-slate-500 block">{isHedging ? '持有重量 (克)' : '持有股數'}</label><input type="number" value={etf.shares} onChange={(e) => updateEtf(idx, 'shares', Number(e.target.value))} disabled={hasLots} className={`w-full bg-slate-800 border rounded-lg px-2 py-1 text-sm ${hasLots ? 'border-slate-700 text-slate-400 cursor-not-allowed' : 'border-slate-600'}`} /></div>
+                      <div><label className="text-xs text-slate-500 block">平均成本</label><input type="number" value={etf.costPrice} onChange={(e) => updateEtf(idx, 'costPrice', Number(e.target.value))} disabled={hasLots} className={`w-full bg-slate-800 border rounded-lg px-2 py-1 text-sm ${hasLots ? 'border-slate-700 text-slate-400 cursor-not-allowed' : 'border-slate-600'}`} /></div>
                       <div className="relative group/tooltip">
                         <div className="flex justify-between items-center mb-1"><button onClick={() => toggleEtfDividendType(idx)} className="text-xs flex items-center gap-1 text-blue-400 hover:text-blue-300 w-full"><ArrowRightLeft className="w-3 h-3" />{isPerPeriod ? '單次配息' : '年化總配息'}</button></div>
-                        <input type="number" value={etf.dividendPerShare} onChange={(e) => updateEtf(idx, 'dividendPerShare', Number(e.target.value))} className={`w-full bg-slate-800 border rounded-lg px-2 py-1 text-sm ${isPerPeriod ? 'border-blue-500 text-blue-300' : 'border-slate-600'}`} />
+                        {/* ★★★ Hedging UI Tweak: Disable Dividend for Gold ★★★ */}
+                        <input type="number" value={etf.dividendPerShare} onChange={(e) => updateEtf(idx, 'dividendPerShare', Number(e.target.value))} disabled={isHedging} className={`w-full bg-slate-800 border rounded-lg px-2 py-1 text-sm ${isHedging ? 'border-slate-700 text-slate-500 cursor-not-allowed' : isPerPeriod ? 'border-blue-500 text-blue-300' : 'border-slate-600'}`} />
                       </div>
                       <div><label className="text-xs text-slate-500 block">現價</label><input type="number" value={etf.currentPrice} onChange={(e) => updateEtf(idx, 'currentPrice', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div>
                     </div>
@@ -909,16 +937,20 @@ const App: React.FC = () => {
               <div className="text-slate-400 text-xs uppercase tracking-wider">年度淨現金部位</div>
               <div className={`text-2xl font-bold ${yearlyNetPosition.isNegative() ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(yearlyNetPosition)}</div>
             </div>
+            
+            {/* ★★★ Feature 2: Mortgage Coverage Card ★★★ */}
+            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-yellow-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl">
+              <div className="text-slate-400 text-xs uppercase tracking-wider flex items-center gap-1"><Zap className="w-3 h-3 text-yellow-400"/> 股息房貸覆蓋率</div>
+              <div className={`text-2xl font-bold ${mortgageCoverage >= 100 ? 'text-yellow-400' : 'text-white'}`}>{mortgageCoverage.toFixed(1)}%</div>
+              <div className="text-[10px] text-slate-500 mt-1">目標: 100% (完全覆蓋)</div>
+            </div>
+
             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl">
               <div className="text-slate-400 text-xs uppercase tracking-wider">資產總市值</div>
               <div className="text-2xl font-bold text-blue-400">{formatMoney(totalMarketValue)}</div>
               <div className={`text-xs mt-1 ${unrealizedPL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>損益: {unrealizedPL >= 0 ? '+' : ''}{formatMoney(unrealizedPL)}</div>
             </div>
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-amber-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl">
-              <div className="text-slate-400 text-xs uppercase tracking-wider">整體維持率</div>
-              <div className={`text-2xl font-bold ${currentMaintenance < 130 ? 'text-red-500' : 'text-amber-400'}`}>{currentMaintenance.toFixed(2)}%</div>
-              <div className="text-[10px] text-slate-500 mt-1 flex flex-col"><span>質押: {formatMoney(totalCollateralLoan)}</span><span>融資: {formatMoney(totalGlobalMargin + totalEtfMargin)}</span></div>
-            </div>
+            
              <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-purple-500 shadow-md transition-transform duration-300 hover:scale-105 hover:shadow-xl">
               <div className="text-slate-400 text-xs uppercase tracking-wider">預估稅負</div>
               <div className="text-2xl font-bold text-purple-400">{formatMoney(healthInsuranceTotal.plus(incomeTaxTotal))}</div>
