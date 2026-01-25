@@ -1,6 +1,7 @@
 import { ETF, Loan, StockLoan, CreditLoan, TaxStatus, MortgageType, AllocationConfig } from './types';
 
 export const INITIAL_ETFS: ETF[] = [
+  // =========== 85% 配息型 (現金流主力) ===========
   { 
     id: '0056', 
     name: '0056 (高股息)', 
@@ -12,7 +13,7 @@ export const INITIAL_ETFS: ETF[] = [
     payMonths: [1, 4, 7, 10],
     marginLoanAmount: 0,
     marginInterestRate: 2.2,
-    category: 'dividend' // 設定為配息型
+    category: 'dividend'
   },
   { 
     id: '00919', 
@@ -25,7 +26,7 @@ export const INITIAL_ETFS: ETF[] = [
     payMonths: [3, 6, 9, 12],
     marginLoanAmount: 0,
     marginInterestRate: 2.2,
-    category: 'dividend' // 設定為配息型
+    category: 'dividend'
   },
   { 
     id: '00929', 
@@ -38,7 +39,50 @@ export const INITIAL_ETFS: ETF[] = [
     payMonths: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
     marginLoanAmount: 0,
     marginInterestRate: 2.2,
-    category: 'dividend' // 設定為配息型
+    category: 'dividend'
+  },
+
+  // =========== 15% 避險型 (黃金/債券) ===========
+  { 
+    id: 'GOLD', 
+    name: '實體黃金 (克)', 
+    shares: 0,      // 【填寫說明】這裡請輸入「重量」(例如：100克)
+    costPrice: 0,   // 【填寫說明】輸入您的平均買入金價
+    currentPrice: 2850, // 假設目前台銀金價 (台幣/克)，請自行更新
+    dividendPerShare: 0, // 黃金無配息，設為 0
+    dividendType: 'annual', 
+    payMonths: [],
+    marginLoanAmount: 0,
+    marginInterestRate: 0,
+    category: 'hedging' // 自動歸類到黃色避險區塊
+  },
+  { 
+    id: 'HEDGE-1', 
+    name: '自選避險標的 (請改名)', 
+    shares: 0, 
+    costPrice: 0, 
+    currentPrice: 0, 
+    dividendPerShare: 0, 
+    dividendType: 'annual', 
+    payMonths: [], 
+    marginLoanAmount: 0,
+    marginInterestRate: 0,
+    category: 'hedging' // 自動歸類到黃色避險區塊
+  },
+
+  // =========== 5% 主動型 (價差交易) ===========
+  { 
+    id: 'ACTIVE-1', 
+    name: '自選主動標的 (請改名)', 
+    shares: 0, 
+    costPrice: 0, 
+    currentPrice: 0, 
+    dividendPerShare: 0, 
+    dividendType: 'annual', 
+    payMonths: [],
+    marginLoanAmount: 0,
+    marginInterestRate: 0,
+    category: 'active' // 自動歸類到紫色主動區塊
   },
 ];
 
@@ -97,6 +141,7 @@ export const INITIAL_TAX_STATUS: TaxStatus = {
   isDisabled: false
 };
 
+// 您的資金規劃比例
 export const INITIAL_ALLOCATION: AllocationConfig = {
   totalFunds: 0,      
   dividendRatio: 85,  
