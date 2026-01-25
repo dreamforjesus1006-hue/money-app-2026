@@ -43,13 +43,13 @@ export const INITIAL_ETFS: ETF[] = [
     category: 'dividend'
   },
 
-  // 15% 避險型 (黃金/債券)
+  // 15% 避險型
   { 
     id: 'GOLD', 
     name: '實體黃金 (克)', 
-    shares: 0,      // 請輸入重量
-    costPrice: 0,   // 請輸入買入均價
-    currentPrice: 2850, // 請輸入目前金價
+    shares: 0,      
+    costPrice: 0,   
+    currentPrice: 2850, 
     dividendPerShare: 0, 
     dividendType: 'annual', 
     payMonths: [],
@@ -139,7 +139,8 @@ export const INITIAL_TAX_STATUS: TaxStatus = {
   salaryIncome: 600000,
   dependents: 0,
   hasSpouse: false,
-  isDisabled: false
+  isDisabled: false,
+  livingExpenses: 0 // ★★★ 預設生活費為 0 ★★★
 };
 
 export const INITIAL_ALLOCATION: AllocationConfig = {
