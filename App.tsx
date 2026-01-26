@@ -198,12 +198,15 @@ const App: React.FC = () => {
   const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
 
   // B. Allocation Calculations
+  const targetDividend = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
+  const targetHedging = Math.floor(allocation.totalFunds * (allocation.hedgingRatio / 100));
+  const targetActive = Math.floor(allocation.totalFunds * (allocation.activeRatio / 100));
+
   const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
   
-  // ★★★ Fixed: Remaining Funds Calculation ★★★
   const totalInvested = actualDividend + actualHedging + actualActive;
   const remainingFunds = allocation.totalFunds - totalInvested;
 
@@ -414,7 +417,7 @@ const App: React.FC = () => {
         {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2>
-            {/* ★★★ Fixed: Allocation Remaining Funds Display ★★★ */}
+            {/* ★★★ Updated: Allocation Status & Gaps ★★★ */}
             <div className="mb-4">
                 <label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label>
                 <div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div>
@@ -422,7 +425,32 @@ const App: React.FC = () => {
                     {remainingFunds >= 0 ? `尚未配置資金: ${formatMoney(remainingFunds)}` : `⚠️ 超出預算: ${formatMoney(Math.abs(remainingFunds))}`}
                 </div>
             </div>
-            <div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-2 text-xs">{/* Simplified Allocation Bars for brevity */}<div className="flex justify-between text-emerald-400"><span>配息型 {allocation.dividendRatio}%</span><span>{formatMoney(actualDividend)}</span></div><div className="w-full bg-slate-800 h-1.5 rounded-full"><div className="bg-emerald-500 h-full rounded-full" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div><div className="flex justify-between text-amber-400"><span>避險型 {allocation.hedgingRatio}%</span><span>{formatMoney(actualHedging)}</span></div><div className="w-full bg-slate-800 h-1.5 rounded-full"><div className="bg-amber-500 h-full rounded-full" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div></div></section>
+            <div className="grid grid-cols-1 gap-4">
+                <div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl">
+                    <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer>
+                </div>
+                <div className="space-y-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800">
+                    {/* Dividend Allocation */}
+                    <div>
+                        <div className="flex justify-between text-xs mb-1"><span className="text-emerald-400 font-bold">配息型</span><div className="flex items-center gap-1"><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-emerald-400 border-b border-emerald-900" /><span className="text-slate-500">%</span></div></div>
+                        <div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div>
+                        <div className="flex justify-between text-[10px] text-slate-500"><span>實: {formatMoney(actualDividend)}</span><span className={actualDividend < targetDividend ? 'text-red-400' : 'text-emerald-500'}>{actualDividend < targetDividend ? `缺 ${formatMoney(targetDividend - actualDividend)}` : '已達標'}</span></div>
+                    </div>
+                    {/* Hedging Allocation */}
+                    <div>
+                        <div className="flex justify-between text-xs mb-1"><span className="text-amber-400 font-bold">避險型</span><div className="flex items-center gap-1"><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-amber-400 border-b border-amber-900" /><span className="text-slate-500">%</span></div></div>
+                        <div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div>
+                        <div className="flex justify-between text-[10px] text-slate-500"><span>實: {formatMoney(actualHedging)}</span><span className={actualHedging < targetHedging ? 'text-red-400' : 'text-emerald-500'}>{actualHedging < targetHedging ? `缺 ${formatMoney(targetHedging - actualHedging)}` : '已達標'}</span></div>
+                    </div>
+                    {/* Active Allocation */}
+                    <div>
+                        <div className="flex justify-between text-xs mb-1"><span className="text-purple-400 font-bold">主動型</span><div className="flex items-center gap-1"><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-purple-400 border-b border-purple-900" /><span className="text-slate-500">%</span></div></div>
+                        <div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive/allocation.totalFunds)*100)}%`}}></div></div>
+                        <div className="flex justify-between text-[10px] text-slate-500"><span>實: {formatMoney(actualActive)}</span><span className={actualActive < targetActive ? 'text-red-400' : 'text-emerald-500'}>{actualActive < targetActive ? `缺 ${formatMoney(targetActive - actualActive)}` : '已達標'}</span></div>
+                    </div>
+                </div>
+            </div>
+          </section>
 
           {/* ETF List */}
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg">
@@ -455,7 +483,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* ★★★ Fixed: Mortgage & Tax & Credit (Compact View) ★★★ */}
+          {/* ★★★ Fixed: Mortgage Details with Two-Stage Rates & Correct Period Unit ★★★ */}
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
              <div>
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><DollarSign className="w-4 h-4" /> 房貸與信貸</h2>
@@ -549,6 +577,23 @@ const App: React.FC = () => {
                   <tbody>{monthlyFlows.map(r=><tr key={r.month} className="border-b border-slate-800 hover:bg-slate-800/50"><td className="p-2">{r.month}</td><td className="p-2 text-right text-emerald-400">{formatMoney(r.dividendInflow)}</td><td className="p-2 text-right text-red-400">{formatMoney(r.loanOutflow)}</td><td className="p-2 text-right text-orange-400">{formatMoney(r.creditLoanOutflow)}</td><td className="p-2 text-right text-blue-400">{formatMoney(r.stockLoanInterest)}</td><td className="p-2 text-right text-slate-400">{formatMoney(r.livingExpenses)}</td><td className="p-2 text-right text-purple-400">{formatMoney(r.taxWithheld)}</td><td className={`p-2 text-right font-bold ${r.netFlow<0?'text-red-500':'text-emerald-500'}`}>{formatMoney(r.netFlow)}</td></tr>)}</tbody>
               </table>
           </div>
+          
+          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂</div>
+              <div className="flex-1 grid grid-cols-4 gap-2 overflow-y-auto max-h-[100px]">
+                  {achievements.map(ach => (
+                      <div key={ach.id} className={`aspect-square rounded-xl flex items-center justify-center border transition-all relative group ${ach.unlocked ? `bg-slate-950 ${ach.color} border-${ach.color.split('-')[1]}-500/50 shadow-lg shadow-${ach.color.split('-')[1]}-500/20` : 'bg-slate-950/30 border-slate-800 text-slate-700 grayscale'}`}>
+                          {ach.icon}
+                          {/* Tooltip */}
+                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-32 bg-black/90 text-white text-[10px] p-2 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 text-center border border-slate-700">
+                              <div className={`font-bold mb-1 ${ach.unlocked ? ach.color : 'text-slate-500'}`}>{ach.name}</div>
+                              <div className="text-slate-400">{ach.desc}</div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+
         </div>
       </div>
     </div>
