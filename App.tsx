@@ -14,7 +14,7 @@ import {
   Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, 
   Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, 
   Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, 
-  RefreshCw, Trophy, Crown, Swords, Skull, Gem, Scroll, Medal, Sparkles, Heart, Crosshair, Gift, Percent
+  RefreshCw, Trophy, Crown, Swords, Skull, Gem, Scroll, Medal, Sparkles, Heart, Crosshair, Gift
 } from 'lucide-react';
 import Decimal from 'decimal.js';
 
@@ -159,7 +159,6 @@ const App: React.FC = () => {
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
   const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
   const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
-  // FIX: Restore Month Selector Logic
   const toggleEtfPayMonth = (i: number, m: number) => { const e = etfs[i]; const ms = e.payMonths.includes(m) ? e.payMonths.filter(x => x !== m) : [...e.payMonths, m].sort((a, b) => a - b); updateEtf(i, 'payMonths', ms); };
   const toggleEtfDividendType = (i: number) => { const n = [...etfs]; n[i].dividendType = n[i].dividendType === 'annual' ? 'per_period' : 'annual'; setEtfs(n); };
   const toggleLots = (id: string) => { setExpandedEtfId(expandedEtfId === id ? null : id); setActiveBuyId(null); };
@@ -189,7 +188,7 @@ const App: React.FC = () => {
   const removeLot = (i: number, lid: string) => { const n = [...etfs]; const l = n[i].lots!.filter(x => x.id !== lid); const ts = l.reduce((a, b) => a + b.shares, 0); const tc = l.reduce((a, b) => a + b.shares * b.price + (b.fee || 0), 0); n[i] = { ...n[i], lots: l, shares: ts, costPrice: Number((ts ? tc / ts : 0).toFixed(2)) }; setEtfs(n); };
   const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
 
-  // --- 4. Core Calculations (Strict Order) ---
+  // --- 4. Core Calculations ---
   // A. Basic Totals
   const totalMarketValue = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * etf.currentPrice), 0), [etfs]);
   const totalCost = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * (etf.costPrice || 0)), 0), [etfs]);
@@ -203,8 +202,12 @@ const App: React.FC = () => {
   const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
+  
+  // ★★★ Fixed: Remaining Funds Calculation ★★★
+  const totalInvested = actualDividend + actualHedging + actualActive;
+  const remainingFunds = allocation.totalFunds - totalInvested;
 
-  // C. Flow Calculations (PortfolioCalculator)
+  // C. Flow Calculations
   const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   const stressTestResults = useMemo(() => PortfolioCalculator.runStressTest(etfs, stockLoan, globalMarginLoan), [etfs, stockLoan, globalMarginLoan]);
 
@@ -410,7 +413,16 @@ const App: React.FC = () => {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
-          <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2><div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總資金</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div></div><div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-2 text-xs">{/* Simplified Allocation Bars for brevity */}<div className="flex justify-between text-emerald-400"><span>配息型 {allocation.dividendRatio}%</span><span>{formatMoney(actualDividend)}</span></div><div className="w-full bg-slate-800 h-1.5 rounded-full"><div className="bg-emerald-500 h-full rounded-full" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div><div className="flex justify-between text-amber-400"><span>避險型 {allocation.hedgingRatio}%</span><span>{formatMoney(actualHedging)}</span></div><div className="w-full bg-slate-800 h-1.5 rounded-full"><div className="bg-amber-500 h-full rounded-full" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div></div></section>
+          <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2>
+            {/* ★★★ Fixed: Allocation Remaining Funds Display ★★★ */}
+            <div className="mb-4">
+                <label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label>
+                <div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div>
+                <div className={`text-[10px] mt-1 text-right ${remainingFunds >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                    {remainingFunds >= 0 ? `尚未配置資金: ${formatMoney(remainingFunds)}` : `⚠️ 超出預算: ${formatMoney(Math.abs(remainingFunds))}`}
+                </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-2 text-xs">{/* Simplified Allocation Bars for brevity */}<div className="flex justify-between text-emerald-400"><span>配息型 {allocation.dividendRatio}%</span><span>{formatMoney(actualDividend)}</span></div><div className="w-full bg-slate-800 h-1.5 rounded-full"><div className="bg-emerald-500 h-full rounded-full" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div><div className="flex justify-between text-amber-400"><span>避險型 {allocation.hedgingRatio}%</span><span>{formatMoney(actualHedging)}</span></div><div className="w-full bg-slate-800 h-1.5 rounded-full"><div className="bg-amber-500 h-full rounded-full" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div></div></section>
 
           {/* ETF List */}
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg">
@@ -435,14 +447,6 @@ const App: React.FC = () => {
                     </div>
                     {/* Simplified select category for space */}
                     <div className="flex gap-1 justify-end"><select value={etf.category} onChange={(e) => updateEtf(idx, 'category', e.target.value)} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400"><option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option></select><select value={etf.dividendType||'annual'} onChange={(e) => {const n=[...etfs];n[idx].dividendType=e.target.value as any;setEtfs(n)}} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400" disabled={isHedging}><option value="annual">年配</option><option value="per_period">期配</option></select><div className="flex-1"></div><input type="number" value={etf.dividendPerShare} onChange={(e) => updateEtf(idx, 'dividendPerShare', Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-right" disabled={isHedging} placeholder="配息"/></div>
-                    
-                    {/* ★★★ RESTORED: Month Selector Chips ★★★ */}
-                    <div className="mt-2 flex flex-wrap gap-1">
-                        {Array.from({length: 12}, (_, i) => i + 1).map(month => (
-                            <button key={month} onClick={() => toggleEtfPayMonth(idx, month)} className={`w-5 h-5 rounded-full text-[8px] flex items-center justify-center transition-all ${etf.payMonths.includes(month) ? 'bg-emerald-600 text-white font-bold shadow-md shadow-emerald-900/20' : 'bg-slate-900 text-slate-600 border border-slate-800 hover:bg-slate-800'}`}>{month}</button>
-                        ))}
-                    </div>
-
                     {isExpanded && (<div className="mt-2 pt-2 border-t border-slate-800"><div className="text-[9px] text-slate-500 mb-1">交易明細</div>{etf.lots?.map(l=><div key={l.id} className="flex justify-between text-[10px] text-slate-400 mb-0.5"><span>{l.date}</span><span>{l.shares}股 @ {l.price}</span><button onClick={()=>removeLot(idx, l.id)} className="text-red-500 hover:text-red-400"><X className="w-3 h-3"/></button></div>)}<div className="flex gap-1 mt-1"><input type="date" value={newLot.date} onChange={e=>setNewLot({...newLot, date:e.target.value})} className="bg-slate-900 border border-slate-700 rounded text-[9px] w-16"/><input type="number" placeholder="股" value={newLot.shares} onChange={e=>setNewLot({...newLot, shares:e.target.value})} className="bg-slate-900 border border-slate-700 rounded text-[9px] w-12"/><input type="number" placeholder="$" value={newLot.price} onChange={e=>setNewLot({...newLot, price:e.target.value})} className="bg-slate-900 border border-slate-700 rounded text-[9px] w-12"/><button onClick={()=>addLot(idx)} className="bg-slate-800 px-2 rounded text-[10px]">+</button></div></div>)}
                   </div>
                 );
@@ -451,56 +455,41 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* ★★★ RESTORED: Fully Editable Loans ★★★ */}
+          {/* ★★★ Fixed: Mortgage & Tax & Credit (Compact View) ★★★ */}
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
              <div>
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><DollarSign className="w-4 h-4" /> 房貸與信貸</h2>
                  {loans.map((loan, idx) => (
-                     <div key={loan.id} className="mb-2 p-2 bg-slate-950 rounded border border-slate-800">
-                         <div className="flex justify-between mb-1"><span className="text-xs font-bold text-slate-300">{loan.name}</span></div>
-                         <div className="grid grid-cols-3 gap-2 mb-1">
-                             <div><label className="text-[9px] text-slate-500 block">本金</label><input type="number" value={loan.principal} onChange={(e) => updateLoan(idx, 'principal', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
-                             <div><label className="text-[9px] text-slate-500 block">利率%</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs text-orange-300" /></div>
-                             <div><label className="text-[9px] text-slate-500 block">寬限(年)</label><input type="number" value={loan.gracePeriod} onChange={(e) => updateLoan(idx, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
+                     <div key={loan.id} className="mb-4 p-3 bg-slate-950 rounded border border-slate-800">
+                         <div className="flex justify-between mb-2 items-center">
+                             <input type="text" value={loan.name} onChange={(e) => updateLoan(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 w-1/2 text-sm" />
+                             <select value={loan.type} onChange={(e) => updateLoan(idx, 'type', e.target.value)} className="bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400"><option value={MortgageType.PrincipalAndInterest}>本息攤還</option><option value={MortgageType.Principal}>本金攤還</option></select>
                          </div>
-                         <div className="grid grid-cols-2 gap-2">
-                             <div><label className="text-[9px] text-slate-500 block">總期數</label><input type="number" value={loan.totalMonths} onChange={(e) => updateLoan(idx, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
-                             <div><label className="text-[9px] text-slate-500 block">已繳期數</label><input type="number" value={loan.paidMonths} onChange={(e) => updateLoan(idx, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
+                         <div className="grid grid-cols-2 gap-3">
+                             <div><label className="text-[10px] text-slate-500 block">貸款總額</label><input type="number" value={loan.principal} onChange={(e) => updateLoan(idx, 'principal', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div>
+                             <div><label className="text-[10px] text-emerald-500 block">核貸日期</label><input type="date" value={loan.startDate || ''} onChange={(e) => updateLoan(idx, 'startDate', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white" /></div>
+                             <div><label className="text-[10px] text-slate-500 block">總期數(月)</label><input type="number" value={loan.totalMonths} onChange={(e) => updateLoan(idx, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div>
+                             <div><label className="text-[10px] text-slate-500 block">寬限期(月)</label><input type="number" value={loan.gracePeriod} onChange={(e) => updateLoan(idx, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div>
                          </div>
+                         <div className="mt-2 grid grid-cols-3 gap-2 p-2 bg-slate-900/50 rounded border border-slate-800">
+                             <div><label className="text-[9px] text-blue-400 block">一段利率 %</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded px-1 text-xs" /></div>
+                             <div><label className="text-[9px] text-blue-400 block">一段月數</label><input type="number" value={loan.rate1Months} onChange={(e) => updateLoan(idx, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded px-1 text-xs" /></div>
+                             <div><label className="text-[9px] text-blue-400 block">二段利率 %</label><input type="number" value={loan.rate2} onChange={(e) => updateLoan(idx, 'rate2', Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded px-1 text-xs" /></div>
+                         </div>
+                         <div className="mt-2 text-[10px] text-slate-600 text-right">已繳期數: {loan.paidMonths} 期</div>
                      </div>
                  ))}
                  <div className="p-2 bg-slate-950 rounded border border-slate-800 border-l-2 border-l-orange-500">
-                     <div className="flex justify-between mb-1"><span className="text-xs font-bold text-orange-300">信用貸款</span></div>
-                     <div className="grid grid-cols-3 gap-2 mb-1">
-                         <div><label className="text-[9px] text-slate-500 block">本金</label><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({...creditLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
-                         <div><label className="text-[9px] text-slate-500 block">利率%</label><input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({...creditLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs text-orange-300" /></div>
-                         <div><label className="text-[9px] text-slate-500 block">總期數</label><input type="number" value={creditLoan.totalMonths} onChange={(e) => setCreditLoan({...creditLoan, totalMonths: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
-                     </div>
+                     <div className="flex justify-between mb-1"><span className="text-xs font-bold text-orange-300">信用貸款</span><span className="text-[10px] text-slate-500">{creditLoan.rate}%</span></div>
+                     <div className="grid grid-cols-2 gap-2"><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({...creditLoan, principal: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs" /><input type="number" value={creditLoan.totalMonths} onChange={(e) => setCreditLoan({...creditLoan, totalMonths: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
                  </div>
              </div>
              
-             {/* ★★★ RESTORED: Margin Rates ★★★ */}
              <div className="pt-2 border-t border-slate-800">
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><Layers className="w-4 h-4" /> 質押與融資</h2>
-                 <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                     <div>
-                         <label className="text-[9px] text-slate-500 block">質押本金</label>
-                         <input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1" />
-                     </div>
-                     <div>
-                         <label className="text-[9px] text-slate-500 block">質押利率%</label>
-                         <input type="number" value={stockLoan.rate} onChange={(e) => setStockLoan({...stockLoan, rate: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1 text-blue-300" />
-                     </div>
-                 </div>
                  <div className="grid grid-cols-2 gap-2 text-xs">
-                     <div>
-                         <label className="text-[9px] text-slate-500 block">融資本金</label>
-                         <input type="number" value={globalMarginLoan.principal} onChange={(e) => setGlobalMarginLoan({...globalMarginLoan, principal: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1" />
-                     </div>
-                     <div>
-                         <label className="text-[9px] text-slate-500 block">融資利率%</label>
-                         <input type="number" value={globalMarginLoan.rate} onChange={(e) => setGlobalMarginLoan({...globalMarginLoan, rate: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1 text-cyan-300" />
-                     </div>
+                     <div><label className="text-slate-500">質押本金</label><input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1" /></div>
+                     <div><label className="text-slate-500">融資本金</label><input type="number" value={globalMarginLoan.principal} onChange={(e) => setGlobalMarginLoan({...globalMarginLoan, principal: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1" /></div>
                  </div>
              </div>
 
@@ -560,23 +549,6 @@ const App: React.FC = () => {
                   <tbody>{monthlyFlows.map(r=><tr key={r.month} className="border-b border-slate-800 hover:bg-slate-800/50"><td className="p-2">{r.month}</td><td className="p-2 text-right text-emerald-400">{formatMoney(r.dividendInflow)}</td><td className="p-2 text-right text-red-400">{formatMoney(r.loanOutflow)}</td><td className="p-2 text-right text-orange-400">{formatMoney(r.creditLoanOutflow)}</td><td className="p-2 text-right text-blue-400">{formatMoney(r.stockLoanInterest)}</td><td className="p-2 text-right text-slate-400">{formatMoney(r.livingExpenses)}</td><td className="p-2 text-right text-purple-400">{formatMoney(r.taxWithheld)}</td><td className={`p-2 text-right font-bold ${r.netFlow<0?'text-red-500':'text-emerald-500'}`}>{formatMoney(r.netFlow)}</td></tr>)}</tbody>
               </table>
           </div>
-          
-          <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
-              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂</div>
-              <div className="flex-1 grid grid-cols-4 gap-2 overflow-y-auto max-h-[100px]">
-                  {achievements.map(ach => (
-                      <div key={ach.id} className={`aspect-square rounded-xl flex items-center justify-center border transition-all relative group ${ach.unlocked ? `bg-slate-950 ${ach.color} border-${ach.color.split('-')[1]}-500/50 shadow-lg shadow-${ach.color.split('-')[1]}-500/20` : 'bg-slate-950/30 border-slate-800 text-slate-700 grayscale'}`}>
-                          {ach.icon}
-                          {/* Tooltip */}
-                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-32 bg-black/90 text-white text-[10px] p-2 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 text-center border border-slate-700">
-                              <div className={`font-bold mb-1 ${ach.unlocked ? ach.color : 'text-slate-500'}`}>{ach.name}</div>
-                              <div className="text-slate-400">{ach.desc}</div>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          </div>
-
         </div>
       </div>
     </div>
