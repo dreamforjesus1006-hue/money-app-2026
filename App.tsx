@@ -7,14 +7,14 @@ import { PortfolioCalculator } from './PortfolioCalculator';
 import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 
-// Import Icons
+// Import Icons (Added Lock icon)
 import { 
   Calculator, AlertTriangle, TrendingDown, DollarSign, Wallet, Activity, Save, Upload, Download, 
   RotateCcw, List, Plus, Trash2, X, ChevronDown, ChevronUp, Clock, Calendar, Repeat, ArrowRightLeft, 
   Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, 
   Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, 
   Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, 
-  RefreshCw, Trophy, Crown, Swords, Skull, Gem, Scroll, Medal, Sparkles, Heart, Crosshair, Gift
+  RefreshCw, Trophy, Crown, Swords, Skull, Gem, Scroll, Medal, Sparkles, Heart, Crosshair, Gift, Lock
 } from 'lucide-react';
 import Decimal from 'decimal.js';
 
@@ -246,14 +246,14 @@ const App: React.FC = () => {
   }, [fireMetrics, actualHedging, totalMarketValue, totalStockDebt, unrealizedPL]);
 
   const achievements = useMemo(() => [
-      { id: '1', name: '初心冒險者', icon: <Swords className="w-5 h-5"/>, desc: '開始您的投資旅程', unlocked: totalMarketValue > 0, color: 'text-slate-400' },
-      { id: '2', name: '第一桶金', icon: <Coins className="w-5 h-5"/>, desc: '總資產突破 100 萬', unlocked: totalMarketValue >= 1000000, color: 'text-emerald-400' },
-      { id: '3', name: '千萬富翁', icon: <Gem className="w-5 h-5"/>, desc: '總資產突破 1000 萬', unlocked: totalMarketValue >= 10000000, color: 'text-purple-400' },
-      { id: '4', name: '煉金術士', icon: <Sparkles className="w-5 h-5"/>, desc: '持有黃金等避險資產', unlocked: actualHedging > 0, color: 'text-yellow-400' },
-      { id: '5', name: '現金流大師', icon: <RefreshCw className="w-5 h-5"/>, desc: '年股息超過 50 萬', unlocked: fireMetrics.annualPassive >= 500000, color: 'text-blue-400' },
-      { id: '6', name: '槓桿戰士', icon: <Zap className="w-5 h-5"/>, desc: '使用融資或質押', unlocked: totalStockDebt > 0, color: 'text-red-400' },
-      { id: '7', name: '財富國王', icon: <Crown className="w-5 h-5"/>, desc: 'FIRE 自由度達 100%', unlocked: fireMetrics.ratio >= 100, color: 'text-yellow-500' },
-      { id: '8', name: '債務殺手', icon: <Skull className="w-5 h-5"/>, desc: '資產大於總負債', unlocked: totalMarketValue > (totalStockDebt + totalRealDebt), color: 'text-orange-500' },
+      { id: '1', name: '初心冒險者', icon: <Swords className="w-5 h-5"/>, desc: '開始投資旅程', unlocked: totalMarketValue > 0, color: 'text-slate-200 border-slate-500 shadow-slate-500/20' },
+      { id: '2', name: '第一桶金', icon: <Coins className="w-5 h-5"/>, desc: '總資產 > 100萬', unlocked: totalMarketValue >= 1000000, color: 'text-emerald-400 border-emerald-500 shadow-emerald-500/20' },
+      { id: '3', name: '千萬富翁', icon: <Gem className="w-5 h-5"/>, desc: '總資產 > 1000萬', unlocked: totalMarketValue >= 10000000, color: 'text-purple-400 border-purple-500 shadow-purple-500/20' },
+      { id: '4', name: '煉金術士', icon: <Sparkles className="w-5 h-5"/>, desc: '持有黃金/避險資產', unlocked: actualHedging > 0, color: 'text-yellow-400 border-yellow-500 shadow-yellow-500/20' },
+      { id: '5', name: '現金流大師', icon: <RefreshCw className="w-5 h-5"/>, desc: '年股息 > 50萬', unlocked: fireMetrics.annualPassive >= 500000, color: 'text-blue-400 border-blue-500 shadow-blue-500/20' },
+      { id: '6', name: '槓桿戰士', icon: <Zap className="w-5 h-5"/>, desc: '使用融資/質押', unlocked: totalStockDebt > 0, color: 'text-red-400 border-red-500 shadow-red-500/20' },
+      { id: '7', name: '財富國王', icon: <Crown className="w-5 h-5"/>, desc: 'FIRE 自由度 100%', unlocked: fireMetrics.ratio >= 100, color: 'text-yellow-500 border-yellow-500 shadow-yellow-500/40' },
+      { id: '8', name: '債務殺手', icon: <Skull className="w-5 h-5"/>, desc: '資產 > 總負債', unlocked: totalMarketValue > (totalStockDebt + totalRealDebt), color: 'text-orange-500 border-orange-500 shadow-orange-500/20' },
   ], [totalMarketValue, actualHedging, fireMetrics, totalStockDebt, totalRealDebt]);
 
   // E. Chart Data
@@ -417,7 +417,6 @@ const App: React.FC = () => {
         {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2>
-            {/* ★★★ Updated: Allocation Status & Gaps ★★★ */}
             <div className="mb-4">
                 <label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label>
                 <div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div>
@@ -430,19 +429,16 @@ const App: React.FC = () => {
                     <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer>
                 </div>
                 <div className="space-y-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800">
-                    {/* Dividend Allocation */}
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-emerald-400 font-bold">配息型</span><div className="flex items-center gap-1"><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-emerald-400 border-b border-emerald-900" /><span className="text-slate-500">%</span></div></div>
                         <div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div>
                         <div className="flex justify-between text-[10px] text-slate-500"><span>實: {formatMoney(actualDividend)}</span><span className={actualDividend < targetDividend ? 'text-red-400' : 'text-emerald-500'}>{actualDividend < targetDividend ? `缺 ${formatMoney(targetDividend - actualDividend)}` : '已達標'}</span></div>
                     </div>
-                    {/* Hedging Allocation */}
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-amber-400 font-bold">避險型</span><div className="flex items-center gap-1"><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-amber-400 border-b border-amber-900" /><span className="text-slate-500">%</span></div></div>
                         <div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div>
                         <div className="flex justify-between text-[10px] text-slate-500"><span>實: {formatMoney(actualHedging)}</span><span className={actualHedging < targetHedging ? 'text-red-400' : 'text-emerald-500'}>{actualHedging < targetHedging ? `缺 ${formatMoney(targetHedging - actualHedging)}` : '已達標'}</span></div>
                     </div>
-                    {/* Active Allocation */}
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-purple-400 font-bold">主動型</span><div className="flex items-center gap-1"><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-purple-400 border-b border-purple-900" /><span className="text-slate-500">%</span></div></div>
                         <div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive/allocation.totalFunds)*100)}%`}}></div></div>
@@ -473,7 +469,6 @@ const App: React.FC = () => {
                         <div><label className="text-[9px] text-slate-500 block">成本</label><input type="number" value={etf.costPrice} onChange={(e) => updateEtf(idx, 'costPrice', Number(e.target.value))} disabled={hasLots} className={`w-full bg-slate-900 border rounded px-1 py-0.5 text-xs ${hasLots ? 'border-slate-800 text-slate-500' : 'border-slate-700 text-white'}`} /></div>
                         <div><label className="text-[9px] text-slate-500 block">現價</label><input type="number" value={etf.currentPrice} onChange={(e) => updateEtf(idx, 'currentPrice', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs text-white" /></div>
                     </div>
-                    {/* Simplified select category for space */}
                     <div className="flex gap-1 justify-end"><select value={etf.category} onChange={(e) => updateEtf(idx, 'category', e.target.value)} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400"><option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option></select><select value={etf.dividendType||'annual'} onChange={(e) => {const n=[...etfs];n[idx].dividendType=e.target.value as any;setEtfs(n)}} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400" disabled={isHedging}><option value="annual">年配</option><option value="per_period">期配</option></select><div className="flex-1"></div><input type="number" value={etf.dividendPerShare} onChange={(e) => updateEtf(idx, 'dividendPerShare', Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-right" disabled={isHedging} placeholder="配息"/></div>
                     {isExpanded && (<div className="mt-2 pt-2 border-t border-slate-800"><div className="text-[9px] text-slate-500 mb-1">交易明細</div>{etf.lots?.map(l=><div key={l.id} className="flex justify-between text-[10px] text-slate-400 mb-0.5"><span>{l.date}</span><span>{l.shares}股 @ {l.price}</span><button onClick={()=>removeLot(idx, l.id)} className="text-red-500 hover:text-red-400"><X className="w-3 h-3"/></button></div>)}<div className="flex gap-1 mt-1"><input type="date" value={newLot.date} onChange={e=>setNewLot({...newLot, date:e.target.value})} className="bg-slate-900 border border-slate-700 rounded text-[9px] w-16"/><input type="number" placeholder="股" value={newLot.shares} onChange={e=>setNewLot({...newLot, shares:e.target.value})} className="bg-slate-900 border border-slate-700 rounded text-[9px] w-12"/><input type="number" placeholder="$" value={newLot.price} onChange={e=>setNewLot({...newLot, price:e.target.value})} className="bg-slate-900 border border-slate-700 rounded text-[9px] w-12"/><button onClick={()=>addLot(idx)} className="bg-slate-800 px-2 rounded text-[10px]">+</button></div></div>)}
                   </div>
@@ -483,7 +478,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* ★★★ Fixed: Mortgage Details with Two-Stage Rates & Correct Period Unit ★★★ */}
+          {/* Mortgage & Tax & Credit */}
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
              <div>
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><DollarSign className="w-4 h-4" /> 房貸與信貸</h2>
@@ -578,17 +573,20 @@ const App: React.FC = () => {
               </table>
           </div>
           
+          {/* ★★★ Updated: Achievement Hall (Card Grid) ★★★ */}
           <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
-              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂</div>
-              <div className="flex-1 grid grid-cols-4 gap-2 overflow-y-auto max-h-[100px]">
+              <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂 (Hall of Fame)</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {achievements.map(ach => (
-                      <div key={ach.id} className={`aspect-square rounded-xl flex items-center justify-center border transition-all relative group ${ach.unlocked ? `bg-slate-950 ${ach.color} border-${ach.color.split('-')[1]}-500/50 shadow-lg shadow-${ach.color.split('-')[1]}-500/20` : 'bg-slate-950/30 border-slate-800 text-slate-700 grayscale'}`}>
-                          {ach.icon}
-                          {/* Tooltip */}
-                          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-32 bg-black/90 text-white text-[10px] p-2 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 text-center border border-slate-700">
-                              <div className={`font-bold mb-1 ${ach.unlocked ? ach.color : 'text-slate-500'}`}>{ach.name}</div>
-                              <div className="text-slate-400">{ach.desc}</div>
+                      <div key={ach.id} className={`relative p-3 rounded-xl border flex items-center gap-3 transition-all duration-500 group ${ach.unlocked ? `bg-slate-950/80 ${ach.color}` : 'bg-slate-950/30 border-slate-800 opacity-60 grayscale'}`}>
+                          <div className={`p-2 rounded-full shadow-lg ${ach.unlocked ? 'bg-slate-900 text-white shadow-current/20' : 'bg-slate-800 text-slate-600'}`}>
+                              {ach.unlocked ? ach.icon : <Lock className="w-5 h-5" />}
                           </div>
+                          <div className="flex-1 min-w-0">
+                              <div className={`text-xs font-bold truncate ${ach.unlocked ? 'text-white' : 'text-slate-500'}`}>{ach.name}</div>
+                              <div className="text-[10px] text-slate-400 truncate">{ach.desc}</div>
+                          </div>
+                          {ach.unlocked && <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />}
                       </div>
                   ))}
               </div>
