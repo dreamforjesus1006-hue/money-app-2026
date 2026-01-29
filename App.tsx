@@ -14,7 +14,7 @@ import {
   Info, Banknote, Coins, ShoppingCart, CheckCircle2, Cloud, Loader2, Layers, HelpCircle, Smartphone, 
   Monitor, HardDrive, Database, Link as LinkIcon, Settings, Globe, Code, ExternalLink, CheckSquare, 
   Edit3, PieChart as PieIcon, Target, Lightbulb, Zap, Coffee, TrendingUp, ShieldCheck, Flame, 
-  RefreshCw, Trophy, Crown, Swords, Skull, Gem, Scroll, Medal, Sparkles, Heart, Crosshair, Gift, Lock, UserPlus, HeartHandshake
+  RefreshCw, Trophy, Crown, Swords, Skull, Gem, Scroll, Medal, Sparkles, Heart, Crosshair, Gift, Lock, UserPlus, HeartHandshake, Tag
 } from 'lucide-react';
 import Decimal from 'decimal.js';
 
@@ -109,7 +109,13 @@ const App: React.FC = () => {
         const result = await StorageService.loadData();
         if (result.data) {
           const { etfs, loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, allocation } = result.data;
-          setEtfs((etfs || INITIAL_ETFS).map(e => ({ ...e, category: e.category || 'dividend' })));
+          // Ensure new 'code' field exists in old data
+          const patchedEtfs = (etfs || INITIAL_ETFS).map(e => ({ 
+              ...e, 
+              category: e.category || 'dividend',
+              code: e.code || e.id // Use ID as fallback code if missing
+          }));
+          setEtfs(patchedEtfs);
           let mergedLoans = loans || INITIAL_LOANS; if (mergedLoans.length < INITIAL_LOANS.length) mergedLoans = [...mergedLoans, INITIAL_LOANS[1]]; setLoans(mergedLoans);
           setStockLoan(stockLoan || INITIAL_STOCK_LOAN); setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
           setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); setTaxStatus({ ...INITIAL_TAX_STATUS, ...taxStatus });
@@ -143,10 +149,22 @@ const App: React.FC = () => {
           const text = await res.text();
           const rows = text.split('\n').map(r => r.split(','));
           const map = new Map<string, number>();
-          rows.forEach(r => { if(r.length>=2) { const id=r[0].replace(/['"\r]/g,'').trim(); const p=parseFloat(r[1].replace(/['"\r]/g,'').trim()); if(id&&!isNaN(p)) map.set(id, p); }});
+          rows.forEach(r => { if(r.length>=2) { 
+              // Try to clean up the code from CSV
+              const code=r[0].replace(/['"\r]/g,'').trim(); 
+              const p=parseFloat(r[1].replace(/['"\r]/g,'').trim()); 
+              if(code&&!isNaN(p)) map.set(code, p); 
+          }});
+          
           let count = 0;
-          setEtfs(etfs.map(e => { const p = map.get(e.id); if(p!==undefined) { count++; return {...e, currentPrice: p}; } return e; }));
-          alert(`戰鬥數據更新！同步了 ${count} 個標的。`);
+          setEtfs(etfs.map(e => { 
+              // ★★★ MATCHING LOGIC: Try Code first, then ID ★★★
+              const targetCode = e.code || e.id; 
+              const newPrice = map.get(targetCode); 
+              if(newPrice!==undefined) { count++; return {...e, currentPrice: newPrice}; } 
+              return e; 
+          }));
+          alert(`戰鬥數據更新！同步了 ${count} 個標的。\n(請確保 APP 的「代號」與試算表 A 欄完全一致)`);
       } catch { alert('更新失敗，請檢查連結。'); } finally { setIsUpdatingPrices(false); }
   };
 
@@ -157,7 +175,8 @@ const App: React.FC = () => {
   };
 
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
-  const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
+  // ★★★ NEW: addEtf now inits with empty code ★★★
+  const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), code: '', name: '新標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
   const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
   const toggleEtfPayMonth = (i: number, m: number) => { const e = etfs[i]; const ms = e.payMonths.includes(m) ? e.payMonths.filter(x => x !== m) : [...e.payMonths, m].sort((a, b) => a - b); updateEtf(i, 'payMonths', ms); };
   const toggleEtfDividendType = (i: number) => { const n = [...etfs]; n[i].dividendType = n[i].dividendType === 'annual' ? 'per_period' : 'annual'; setEtfs(n); };
@@ -208,10 +227,12 @@ const App: React.FC = () => {
   const targetDividend = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
   const targetHedging = Math.floor(allocation.totalFunds * (allocation.hedgingRatio / 100));
   const targetActive = Math.floor(allocation.totalFunds * (allocation.activeRatio / 100));
+
   const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
+  
   const totalInvested = actualDividend + actualHedging + actualActive;
   const remainingFunds = allocation.totalFunds - totalInvested;
 
@@ -281,6 +302,25 @@ const App: React.FC = () => {
      const taxScore = Math.max(0, 100 - (taxRatio * 500)); 
      return [{ subject: '現金流', A: Math.floor(yieldScore), fullMark: 100 }, { subject: '防禦力', A: Math.floor((hedgeScore+marginScore)/2), fullMark: 100 }, { subject: '成長力', A: Math.floor(activeScore), fullMark: 100 }, { subject: '稅務', A: Math.floor(taxScore), fullMark: 100 }, { subject: '抗壓', A: marginScore, fullMark: 100 }];
   }, [monthlyFlows, totalMarketValue, currentMaintenance, actualHedging, actualActive, fireMetrics, healthInsuranceTotal, incomeTaxTotal]);
+
+  const mortgageCoverage = useMemo(() => {
+      const totalDividendInflow = monthlyFlows.reduce((acc, curr) => acc + curr.dividendInflow, 0);
+      const totalLoanOutflow = monthlyFlows.reduce((acc, curr) => acc + curr.loanOutflow + curr.creditLoanOutflow, 0);
+      return totalLoanOutflow === 0 ? 100 : (totalDividendInflow / totalLoanOutflow) * 100;
+  }, [monthlyFlows]);
+
+  const breakevenTip = useMemo(() => {
+      if (yearlyNetPosition.gte(0)) return null;
+      const deficit = yearlyNetPosition.abs().toNumber();
+      const divEtfs = etfs.filter(e => e.category === 'dividend' && e.shares > 0);
+      let totalInvested = 0; let totalDiv = 0;
+      divEtfs.forEach(e => {
+          const mkt = e.shares * e.currentPrice; const freq = e.dividendType === 'per_period' && e.payMonths.length > 0 ? e.payMonths.length : 1;
+          totalInvested += mkt; totalDiv += e.dividendPerShare * freq * e.shares;
+      });
+      const avgYield = totalInvested > 0 ? totalDiv / totalInvested : 0.06;
+      return { deficit, avgYield: (avgYield * 100).toFixed(1), neededCapital: deficit / avgYield };
+  }, [yearlyNetPosition, etfs]);
 
   if (isInitializing) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400 font-mono">系統啟動中...</p></div>;
 
@@ -446,11 +486,18 @@ const App: React.FC = () => {
                 return (
                   <div key={etf.id} className={`p-3 bg-slate-950 rounded-xl border transition-all hover:border-slate-600 ${isHedging ? 'border-amber-900/50' : 'border-slate-800'}`}>
                     <div className="flex justify-between items-center mb-2">
-                      <div className="flex-1 mr-2"><input type="text" value={etf.name} onChange={(e) => updateEtf(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 focus:border-blue-500 outline-none w-full text-sm" /></div>
+                      <div className="flex-1 mr-2 flex items-center gap-1">
+                          {/* ★★★ NEW: Code Input Field ★★★ */}
+                          <div className="relative group/code">
+                              <Tag className="absolute left-1 top-1.5 w-3 h-3 text-slate-500" />
+                              <input type="text" value={etf.code || ''} onChange={(e) => updateEtf(idx, 'code', e.target.value)} className="bg-slate-900 border border-slate-700 rounded pl-5 pr-1 py-0.5 text-xs text-blue-300 w-20 focus:border-blue-500 outline-none" placeholder="代號" />
+                          </div>
+                          <input type="text" value={etf.name} onChange={(e) => updateEtf(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 focus:border-blue-500 outline-none w-full text-sm" />
+                      </div>
                       <div className="flex gap-1"><button onClick={() => toggleBuy(etf.id)} className={`p-1.5 rounded-lg border transition-colors ${isBuying ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-emerald-400'}`}><ShoppingCart className="w-3 h-3" /></button><button onClick={() => toggleLots(etf.id)} className={`p-1.5 rounded-lg border transition-colors ${hasLots ? 'bg-slate-800 border-slate-600 text-slate-300' : 'border-slate-700 text-slate-500'}`}><List className="w-3 h-3" /></button><button onClick={() => removeEtf(etf.id)} className="p-1.5 rounded-lg border border-slate-700 text-slate-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button></div>
                     </div>
                     {isBuying && (<div className="mb-2 p-2 bg-emerald-900/20 border border-emerald-500/20 rounded-lg animate-in slide-in-from-top-2">
-                        {/* ★★★ NEW: Buy Form with Margin Input ★★★ */}
+                        {/* Buy Form with Margin Input */}
                         <div className="grid grid-cols-4 gap-1 mb-2">
                             <div className="col-span-1"><label className="text-[9px] text-slate-500">日期</label><input type="date" value={buyForm.date} onChange={e => setBuyForm({...buyForm, date: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs text-white" /></div>
                             <div><label className="text-[9px] text-slate-500">數量</label><input type="number" placeholder="0" value={buyForm.shares} onChange={e => setBuyForm({...buyForm, shares: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs text-white" /></div>
@@ -465,10 +512,10 @@ const App: React.FC = () => {
                         <div><label className="text-[9px] text-slate-500 block">成本</label><input type="number" value={etf.costPrice} onChange={(e) => updateEtf(idx, 'costPrice', Number(e.target.value))} disabled={hasLots} className={`w-full bg-slate-900 border rounded px-1 py-0.5 text-xs ${hasLots ? 'border-slate-800 text-slate-500' : 'border-slate-700 text-white'}`} /></div>
                         <div><label className="text-[9px] text-slate-500 block">現價</label><input type="number" value={etf.currentPrice} onChange={(e) => updateEtf(idx, 'currentPrice', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs text-white" /></div>
                     </div>
-                    {/* Simplified select category for space */}
+                    
                     <div className="flex gap-1 justify-end"><select value={etf.category} onChange={(e) => updateEtf(idx, 'category', e.target.value)} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400"><option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option></select><select value={etf.dividendType||'annual'} onChange={(e) => {const n=[...etfs];n[idx].dividendType=e.target.value as any;setEtfs(n)}} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400" disabled={isHedging}><option value="annual">年配</option><option value="per_period">期配</option></select><div className="flex-1"></div><input type="number" value={etf.dividendPerShare} onChange={(e) => updateEtf(idx, 'dividendPerShare', Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-right" disabled={isHedging} placeholder="配息"/></div>
                     
-                    {/* ★★★ RESTORED: Month Selector (Green Buttons) ★★★ */}
+                    {/* Month Selector */}
                     <div className="mt-2 flex gap-1 flex-wrap">
                       {Array.from({length: 12}, (_, i) => i + 1).map(month => (
                         <button key={month} onClick={() => toggleEtfPayMonth(idx, month)} className={`w-5 h-5 rounded-full text-[9px] flex items-center justify-center transition-all ${etf.payMonths?.includes(month) ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50 scale-110' : 'bg-slate-800 text-slate-600 hover:bg-slate-700'}`}>
@@ -501,7 +548,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* ★★★ Fixed: Mortgage Details with Two-Stage Rates & Correct Period Unit ★★★ */}
+          {/* Mortgage & Tax & Credit (Fully Detailed) */}
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
              <div>
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><DollarSign className="w-4 h-4" /> 房貸與信貸</h2>
@@ -527,7 +574,7 @@ const App: React.FC = () => {
                  ))}
                  <div className="p-2 bg-slate-950 rounded border border-slate-800 border-l-2 border-l-orange-500">
                      <div className="flex justify-between mb-1"><span className="text-xs font-bold text-orange-300">信用貸款</span>
-                        {/* ★★★ Fixed: Credit Loan Rate Input ★★★ */}
+                        {/* Fixed: Credit Loan Rate Input */}
                         <input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({...creditLoan, rate: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs text-right w-16" placeholder="利率%" />
                      </div>
                      <div className="grid grid-cols-2 gap-2"><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({...creditLoan, principal: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs" /><input type="number" value={creditLoan.totalMonths} onChange={(e) => setCreditLoan({...creditLoan, totalMonths: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
@@ -536,7 +583,7 @@ const App: React.FC = () => {
              
              <div className="pt-2 border-t border-slate-800">
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><Layers className="w-4 h-4" /> 質押與融資 (維持率斷頭線)</h2>
-                 {/* ★★★ Fixed: Margin Loan Inputs with Rates & Maintenance Limit ★★★ */}
+                 {/* Fixed: Margin Loan Inputs with Rates & Maintenance Limit */}
                  <div className="grid grid-cols-2 gap-2 text-xs mb-2">
                      <div className="p-2 bg-slate-950 rounded border border-slate-800">
                          <label className="text-slate-500 block mb-1">質押 (本金 / 利率%)</label>
@@ -553,7 +600,6 @@ const App: React.FC = () => {
                          </div>
                      </div>
                  </div>
-                 {/* Maintenance Limit Input */}
                  <div className="flex items-center gap-2">
                     <label className="text-xs text-red-400">⚠️ 維持率斷頭線 (%):</label>
                     <input type="number" value={stockLoan.maintenanceLimit || 130} onChange={(e) => setStockLoan({...stockLoan, maintenanceLimit: Number(e.target.value)})} className="w-16 bg-slate-950 border border-red-900/50 rounded px-1 text-xs text-red-300" />
