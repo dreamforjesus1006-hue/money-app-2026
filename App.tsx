@@ -417,7 +417,7 @@ const App: React.FC = () => {
         {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2>
-            {/* ★★★ Fixed: Allocation Remaining Funds Display ★★★ */}
+            {/* Allocation Remaining Funds Display */}
             <div className="mb-4">
                 <label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label>
                 <div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div>
@@ -476,7 +476,7 @@ const App: React.FC = () => {
                     {/* Simplified select category for space */}
                     <div className="flex gap-1 justify-end"><select value={etf.category} onChange={(e) => updateEtf(idx, 'category', e.target.value)} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400"><option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option></select><select value={etf.dividendType||'annual'} onChange={(e) => {const n=[...etfs];n[idx].dividendType=e.target.value as any;setEtfs(n)}} className="bg-slate-900 text-[9px] border border-slate-700 rounded px-1 text-slate-400" disabled={isHedging}><option value="annual">年配</option><option value="per_period">期配</option></select><div className="flex-1"></div><input type="number" value={etf.dividendPerShare} onChange={(e) => updateEtf(idx, 'dividendPerShare', Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-right" disabled={isHedging} placeholder="配息"/></div>
                     
-                    {/* ★★★ RESTORED: Month Selector ★★★ */}
+                    {/* ★★★ RESTORED: Month Selector (Green Buttons) ★★★ */}
                     <div className="mt-2 flex gap-1 flex-wrap">
                       {Array.from({length: 12}, (_, i) => i + 1).map(month => (
                         <button key={month} onClick={() => toggleEtfPayMonth(idx, month)} className={`w-5 h-5 rounded-full text-[9px] flex items-center justify-center transition-all ${etf.payMonths?.includes(month) ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50 scale-110' : 'bg-slate-800 text-slate-600 hover:bg-slate-700'}`}>
@@ -493,7 +493,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* ★★★ Fixed: Mortgage Details with Two-Stage Rates & Correct Period Unit ★★★ */}
+          {/* Mortgage & Tax & Credit (Fully Detailed) */}
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
              <div>
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><DollarSign className="w-4 h-4" /> 房貸與信貸</h2>
@@ -518,16 +518,32 @@ const App: React.FC = () => {
                      </div>
                  ))}
                  <div className="p-2 bg-slate-950 rounded border border-slate-800 border-l-2 border-l-orange-500">
-                     <div className="flex justify-between mb-1"><span className="text-xs font-bold text-orange-300">信用貸款</span><span className="text-[10px] text-slate-500">{creditLoan.rate}%</span></div>
+                     <div className="flex justify-between mb-1"><span className="text-xs font-bold text-orange-300">信用貸款</span>
+                        {/* ★★★ Fixed: Credit Loan Rate Input ★★★ */}
+                        <input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({...creditLoan, rate: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs text-right w-16" placeholder="利率%" />
+                     </div>
                      <div className="grid grid-cols-2 gap-2"><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({...creditLoan, principal: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs" /><input type="number" value={creditLoan.totalMonths} onChange={(e) => setCreditLoan({...creditLoan, totalMonths: Number(e.target.value)})} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
                  </div>
              </div>
              
              <div className="pt-2 border-t border-slate-800">
                  <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><Layers className="w-4 h-4" /> 質押與融資</h2>
+                 {/* ★★★ Fixed: Margin Loan Inputs with Rates ★★★ */}
                  <div className="grid grid-cols-2 gap-2 text-xs">
-                     <div><label className="text-slate-500">質押本金</label><input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1" /></div>
-                     <div><label className="text-slate-500">融資本金</label><input type="number" value={globalMarginLoan.principal} onChange={(e) => setGlobalMarginLoan({...globalMarginLoan, principal: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded px-1" /></div>
+                     <div className="p-2 bg-slate-950 rounded border border-slate-800">
+                         <label className="text-slate-500 block mb-1">質押 (本金 / 利率%)</label>
+                         <div className="flex gap-1">
+                             <input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-700 rounded px-1" />
+                             <input type="number" value={stockLoan.rate} onChange={(e) => setStockLoan({...stockLoan, rate: Number(e.target.value)})} className="w-12 bg-slate-900 border border-slate-700 rounded px-1 text-blue-300" />
+                         </div>
+                     </div>
+                     <div className="p-2 bg-slate-950 rounded border border-slate-800">
+                         <label className="text-slate-500 block mb-1">融資 (本金 / 利率%)</label>
+                         <div className="flex gap-1">
+                             <input type="number" value={globalMarginLoan.principal} onChange={(e) => setGlobalMarginLoan({...globalMarginLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-700 rounded px-1" />
+                             <input type="number" value={globalMarginLoan.rate} onChange={(e) => setGlobalMarginLoan({...globalMarginLoan, rate: Number(e.target.value)})} className="w-12 bg-slate-900 border border-slate-700 rounded px-1 text-cyan-300" />
+                         </div>
+                     </div>
                  </div>
              </div>
 
@@ -588,7 +604,7 @@ const App: React.FC = () => {
               </table>
           </div>
           
-          {/* ★★★ Updated: Achievement Hall (Card Grid) ★★★ */}
+          {/* Achievement Hall (Card Grid) */}
           <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
               <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂 (Hall of Fame)</div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
