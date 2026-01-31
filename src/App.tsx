@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area } from 'recharts';
-// 👇 關鍵：這裡確認有 Crown, Trophy, Calendar
+// 👇 關鍵修正：確保這裡引用了 Crown, Trophy, Calendar
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar } from 'lucide-react';
 
 // ==========================================
@@ -15,6 +15,19 @@ const MortgageType = {
   Principal: 'Principal'
 };
 
+// 👇 補上 AppState 定義，防止報錯
+interface AppState { 
+    etfs: ETF[]; 
+    loans: Loan[]; 
+    stockLoan: StockLoan; 
+    globalMarginLoan: StockLoan; 
+    creditLoan: CreditLoan; 
+    taxStatus: TaxStatus; 
+    allocation: AllocationConfig; 
+    collection?: {id:string, count:number}[]; 
+    tokens?: number; 
+}
+
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
 interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
 interface Loan { id: string; name: string; principal: number; rate1: number; rate1Months: number; rate2: number; totalMonths: number; paidMonths: number; gracePeriod: number; startDate?: string; type: string; }
@@ -23,7 +36,6 @@ interface CreditLoan { principal: number; rate: number; totalMonths: number; pai
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { apiKey: string; projectId: string; syncId: string; enabled: boolean; priceSourceUrl?: string; }
-interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; collection?: {id:string, count:number}[]; tokens?: number; }
 
 const INITIAL_ETFS: ETF[] = [
   { id: '1', code: '0056', name: '元大高股息', shares: 0, costPrice: 0, currentPrice: 38.5, dividendPerShare: 2.8, dividendType: 'per_period', payMonths: [1, 4, 7, 10], category: 'dividend', marginLoanAmount: 0 },
@@ -81,7 +93,7 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear * 0.0211, incomeTaxTotal: 0 }; 
 };
 
-const STORAGE_KEY = 'baozutang_data_v19_final';
+const STORAGE_KEY = 'baozutang_data_v20_final'; // 更新版本號
 const CLOUD_CONFIG_KEY = 'baozutang_cloud_config';
 
 const StorageService = {
@@ -102,7 +114,7 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
           <div key={loan.id || idx} className="mb-4 p-3 bg-slate-950 rounded border border-slate-800">
             <div className="flex justify-between mb-2 items-center"><input type="text" value={loan.name} onChange={(e) => updateLoan(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 w-1/2 text-sm" /><select value={loan.type} onChange={(e) => updateLoan(idx, 'type', e.target.value)} className="bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400"><option value="PrincipalAndInterest">本息攤還</option><option value="Principal">本金攤還</option></select></div>
             <div className="grid grid-cols-2 gap-3"><div><label className="text-[10px] text-slate-500 block">貸款總額</label><input type="number" value={loan.principal} onChange={(e) => updateLoan(idx, 'principal', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div><div><label className="text-[10px] text-emerald-500 block">核貸日期</label><input type="date" value={loan.startDate || ''} onChange={(e) => updateLoan(idx, 'startDate', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white" /></div><div><label className="text-[10px] text-slate-500 block">總期數(月)</label><input type="number" value={loan.totalMonths} onChange={(e) => updateLoan(idx, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div><div><label className="text-[10px] text-slate-500 block">寬限期(月)</label><input type="number" value={loan.gracePeriod} onChange={(e) => updateLoan(idx, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div></div>
-            <div className="mt-2 grid grid-cols-3 gap-2 p-2 bg-slate-900/50 rounded border border-slate-800"><div><label className="text-[9px] text-blue-400 block">一段利率 %</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div><div><label className="text-[9px] text-blue-400 block">一段月數</label><input type="number" value={loan.rate1Months} onChange={(e) => updateLoan(idx, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div><div><label className="text-[9px] text-blue-400 block">二段利率 %</label><input type="number" value={loan.rate2} onChange={(e) => updateLoan(idx, 'rate2', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div></div>
+            <div className="mt-2 grid grid-cols-3 gap-2 p-2 bg-slate-900/50 rounded border border-slate-800"><div><label className="text-[9px] text-blue-400 block">一段利率 %</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded px-1 text-xs" /></div><div><label className="text-[9px] text-blue-400 block">一段月數</label><input type="number" value={loan.rate1Months} onChange={(e) => updateLoan(idx, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div><div><label className="text-[9px] text-blue-400 block">二段利率 %</label><input type="number" value={loan.rate2} onChange={(e) => updateLoan(idx, 'rate2', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div></div>
             <div className="mt-2 text-[10px] text-slate-600 text-right">已繳期數: {loan.paidMonths} 期</div>
           </div>
         ))}
@@ -112,7 +124,7 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
         </div>
       </div>
       <div className="pt-2 border-t border-slate-800">
-        <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><Layers className="w-4 h-4" /> 質押與融資 (維持率斷頭線)</h2>
+        <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><Layers className="w-4 h-4" /> 質押與融資</h2>
         <div className="grid grid-cols-2 gap-2 text-xs mb-2">
           <div className="p-2 bg-slate-950 rounded border border-slate-800"><label className="text-slate-500 block mb-1">質押 (本金 / 利率%)</label><div className="flex gap-1"><input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({ ...stockLoan, principal: Number(e.target.value) })} className="w-full bg-slate-900 border border-slate-700 rounded px-1" /><input type="number" value={stockLoan.rate} onChange={(e) => setStockLoan({ ...stockLoan, rate: Number(e.target.value) })} className="w-12 bg-slate-900 border border-slate-700 rounded px-1 text-blue-300" /></div></div>
           <div className="p-2 bg-slate-950 rounded border border-slate-800"><label className="text-slate-500 block mb-1">融資 (本金 / 利率%)</label><div className="flex gap-1"><input type="number" value={globalMarginLoan.principal} onChange={(e) => setGlobalMarginLoan({ ...globalMarginLoan, principal: Number(e.target.value) })} className="w-full bg-slate-900 border border-slate-700 rounded px-1" /><input type="number" value={globalMarginLoan.rate} onChange={(e) => setGlobalMarginLoan({ ...globalMarginLoan, rate: Number(e.target.value) })} className="w-12 bg-slate-900 border border-slate-700 rounded px-1 text-cyan-300" /></div></div>
@@ -128,6 +140,7 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
   );
 };
 
+// --- AssetList ---
 const AssetList = ({ etfs, setEtfs }: any) => {
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
@@ -210,6 +223,7 @@ const AssetList = ({ etfs, setEtfs }: any) => {
   );
 };
 
+// --- GameHUD ---
 const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalMarketValue, totalDebt, skills, annualPassiveIncome, hasHedging, hasLeverage, netWorthPositive, collection, currentClass }: any) => {
   return (
     <>
@@ -237,18 +251,46 @@ const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalM
             {collection.length > 0 ? (
                 <div className="grid grid-cols-4 gap-2">
                     {collection.slice(0, 8).map((item: any, i: number) => {
-                        const gachaItem = GACHA_ITEMS.find(g => g.id === item.id);
+                        const gachaItem = [
+                            { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓', desc: '看透市場本質' },
+                            { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️', desc: '多元思維模型' },
+                            { id: 'g3', name: '科斯托蘭尼之狗', rarity: 'R', icon: '🐕', desc: '主人與狗的牽絆' },
+                            { id: 'g4', name: '約翰伯格的方舟', rarity: 'UR', icon: '⛵', desc: '指數投資終極載具' },
+                            { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮', desc: '反身性理論' },
+                            { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷', desc: '積少成多' },
+                        ].find(g => g.id === item.id);
                         return <div key={i} className="aspect-square bg-slate-950 rounded border border-slate-700 flex items-center justify-center text-xl cursor-help" title={`${gachaItem?.name} x${item.count}`}>{gachaItem?.icon}</div>;
                     })}
                 </div>
             ) : <div className="flex-1 flex items-center justify-center text-slate-600 text-xs italic">尚無寶物</div>}
         </div>
       </div>
+      <div className="mt-8 bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
+          <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂 (Hall of Fame)</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                  { id: '1', name: '初心冒險者', icon: <Swords className="w-5 h-5"/>, desc: '開始投資旅程', unlocked: totalMarketValue > 0, color: 'text-slate-200 border-slate-500 shadow-slate-500/20' },
+                  { id: '2', name: '第一桶金', icon: <Coins className="w-5 h-5"/>, desc: '總資產 > 100萬', unlocked: totalMarketValue >= 1000000, color: 'text-emerald-400 border-emerald-500 shadow-emerald-500/20' },
+                  { id: '3', name: '千萬富翁', icon: <Gem className="w-5 h-5"/>, desc: '總資產 > 1000萬', unlocked: totalMarketValue >= 10000000, color: 'text-purple-400 border-purple-500 shadow-purple-500/20' },
+                  { id: '4', name: '煉金術士', icon: <Sparkles className="w-5 h-5"/>, desc: '持有黃金等避險資產', unlocked: hasHedging, color: 'text-yellow-400 border-yellow-500 shadow-yellow-500/20' },
+                  { id: '5', name: '現金流大師', icon: <RefreshCw className="w-5 h-5"/>, desc: '年股息超過 50 萬', unlocked: annualPassiveIncome >= 500000, color: 'text-blue-400 border-blue-500 shadow-blue-500/20' },
+                  { id: '6', name: '槓桿戰士', icon: <Zap className="w-5 h-5"/>, desc: '使用融資或質押', unlocked: hasLeverage, color: 'text-red-400 border-red-500 shadow-red-500/20' },
+                  { id: '7', name: '財富國王', icon: <Crown className="w-5 h-5"/>, desc: 'FIRE 自由度達 100%', unlocked: fireRatio >= 100, color: 'text-yellow-500 border-yellow-500 shadow-yellow-500/40' },
+                  { id: '8', name: '債務殺手', icon: <Skull className="w-5 h-5"/>, desc: '資產大於總負債', unlocked: netWorthPositive, color: 'text-orange-500 border-orange-500 shadow-orange-500/20' },
+              ].map(ach => (
+                  <div key={ach.id} className={`relative p-3 rounded-xl border flex items-center gap-3 transition-all duration-500 group ${ach.unlocked ? `bg-slate-950/80 ${ach.color} shadow-lg` : 'bg-slate-950/30 border-slate-800 opacity-60 grayscale'}`}>
+                      <div className={`p-2 rounded-full shadow-lg ${ach.unlocked ? 'bg-slate-900 text-white shadow-current/20' : 'bg-slate-800 text-slate-600'}`}>{ach.unlocked ? ach.icon : <Lock className="w-5 h-5" />}</div>
+                      <div className="flex-1 min-w-0"><div className={`text-xs font-bold truncate ${ach.unlocked ? 'text-white' : 'text-slate-500'}`}>{ach.name}</div><div className="text-[10px] text-slate-400 truncate">{ach.desc}</div></div>
+                      {ach.unlocked && <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />}
+                  </div>
+              ))}
+          </div>
+      </div>
     </>
   );
 };
 
-// --- App 主程式 ---
+// --- 8. 主程式 (App) - 總指揮官 ---
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -287,10 +329,13 @@ const App: React.FC = () => {
           const { etfs, loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, allocation, collection: c, tokens: t } = result.data as any;
           setEtfs(Array.isArray(etfs) ? etfs.map((e: any) => ({ ...e, category: e.category || 'dividend', code: e.code || e.id })) : INITIAL_ETFS);
           setLoans(Array.isArray(loans) ? loans : INITIAL_LOANS);
-          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
-          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); setTaxStatus(taxStatus || INITIAL_TAX_STATUS);
+          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); 
+          setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
+          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); 
+          setTaxStatus(taxStatus ? { ...INITIAL_TAX_STATUS, ...taxStatus } : INITIAL_TAX_STATUS);
           setAllocation(allocation || INITIAL_ALLOCATION);
-          setCollection(c || []); setTokens(t || 0);
+          setCollection(Array.isArray(c) ? c : []); 
+          setTokens(typeof t === 'number' ? t : 0);
         }
       } catch (error) { console.error("Init failed", error); } finally { setIsInitializing(false); }
     };
@@ -378,7 +423,19 @@ const App: React.FC = () => {
   const handleExport = () => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation });
   const openLootBox = () => { setLootQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]); setShowLoot(true); };
   const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
-  const handleGacha = () => { if (tokens < 1) { alert('代幣不足！'); return; } setTokens(prev => prev - 1); setGachaAnimating(true); setGachaResult(null); setTimeout(() => { const item = GACHA_ITEMS[Math.floor(Math.random() * GACHA_ITEMS.length)]; setGachaResult(item); setGachaAnimating(false); setCollection(prev => { const existing = prev.find(i => i.id === item.id); if (existing) return prev.map(i => i.id === item.id ? { ...i, count: i.count + 1 } : i); return [...prev, { id: item.id, count: 1 }]; }); }, 2000); };
+  const handleGacha = () => { 
+      const GACHA_ITEMS_LOCAL = [
+        { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓', desc: '看透市場本質' },
+        { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️', desc: '多元思維模型' },
+        { id: 'g3', name: '科斯托蘭尼之狗', rarity: 'R', icon: '🐕', desc: '主人與狗的牽絆' },
+        { id: 'g4', name: '約翰伯格的方舟', rarity: 'UR', icon: '⛵', desc: '指數投資終極載具' },
+        { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮', desc: '反身性理論' },
+        { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷', desc: '積少成多' },
+      ];
+      if (tokens < 1) { alert('代幣不足！'); return; } 
+      setTokens(prev => prev - 1); setGachaAnimating(true); setGachaResult(null); 
+      setTimeout(() => { const item = GACHA_ITEMS_LOCAL[Math.floor(Math.random() * GACHA_ITEMS_LOCAL.length)]; setGachaResult(item); setGachaAnimating(false); setCollection(prev => { const existing = prev.find(i => i.id === item.id); if (existing) return prev.map(i => i.id === item.id ? { ...i, count: i.count + 1 } : i); return [...prev, { id: item.id, count: 1 }]; }); }, 2000); 
+  };
   
   const rebalanceData = useMemo(() => {
       const total = allocation.totalFunds;
