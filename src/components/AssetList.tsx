@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, ShoppingCart, List, Trash2, X, Tag } from 'lucide-react';
-import { ETF } from '../types';
+// 👇 注意這裡改成了 ../../types
+import { ETF } from '../../types';
 
 const BROKERAGE_RATE = 0.001425;
 
