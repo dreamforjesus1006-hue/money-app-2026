@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area } from 'recharts';
-import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers } from 'lucide-react';
+// 👇 修正：補齊了 Crown, Trophy, Calendar
+import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar } from 'lucide-react';
 
 // ==========================================
-// 1. 全域常數與定義 (放在最上面，保證讀得到)
+// 1. 核心定義 (完全獨立版)
 // ==========================================
 
 const BROKERAGE_RATE = 0.001425;
@@ -15,24 +16,7 @@ const MortgageType = {
   Principal: 'Principal'
 };
 
-const THEMES = {
-    default: { name: '冒險者', color: 'emerald', bg: 'from-emerald-900', border: 'border-emerald-500', text: 'text-emerald-400', icon: <Zap className="w-4 h-4"/> },
-    paladin: { name: '聖騎士', color: 'yellow', bg: 'from-yellow-900', border: 'border-yellow-500', text: 'text-yellow-400', icon: <ShieldCheck className="w-4 h-4"/> }, 
-    berserker: { name: '狂戰士', color: 'red', bg: 'from-red-900', border: 'border-red-500', text: 'text-red-400', icon: <Swords className="w-4 h-4"/> }, 
-    assassin: { name: '刺客', color: 'purple', bg: 'from-purple-900', border: 'border-purple-500', text: 'text-purple-400', icon: <Zap className="w-4 h-4"/> }, 
-    merchant: { name: '大商賈', color: 'blue', bg: 'from-blue-900', border: 'border-blue-500', text: 'text-blue-400', icon: <Coins className="w-4 h-4"/> }, 
-};
-
-const GACHA_ITEMS = [
-    { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓', desc: '看透市場本質' },
-    { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️' },
-    { id: 'g3', name: '科斯托蘭尼之狗', rarity: 'R', icon: '🐕', desc: '主人與狗的牽絆' },
-    { id: 'g4', name: '約翰伯格的方舟', rarity: 'UR', icon: '⛵', desc: '指數投資終極載具' },
-    { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮', desc: '反身性理論' },
-    { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷', desc: '積少成多' },
-];
-
-// 介面定義
+// 介面定義 (AppState 補在這裡)
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
 interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
 interface Loan { id: string; name: string; principal: number; rate1: number; rate1Months: number; rate2: number; totalMonths: number; paidMonths: number; gracePeriod: number; startDate?: string; type: string; }
@@ -41,6 +25,8 @@ interface CreditLoan { principal: number; rate: number; totalMonths: number; pai
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { apiKey: string; projectId: string; syncId: string; enabled: boolean; priceSourceUrl?: string; }
+// 👇 這裡定義了 AppState
+interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; collection?: {id:string, count:number}[]; tokens?: number; }
 
 // 預設資料
 const INITIAL_ETFS: ETF[] = [
@@ -53,6 +39,23 @@ const INITIAL_GLOBAL_MARGIN_LOAN: StockLoan = { principal: 0, rate: 6.5 };
 const INITIAL_CREDIT_LOAN: CreditLoan = { principal: 0, rate: 2.8, totalMonths: 84, paidMonths: 0 };
 const INITIAL_TAX_STATUS: TaxStatus = { salaryIncome: 0, livingExpenses: 30000, dependents: 0, hasSpouse: false, isDisabled: false };
 const INITIAL_ALLOCATION: AllocationConfig = { totalFunds: 0, dividendRatio: 70, hedgingRatio: 20, activeRatio: 10 };
+
+const GACHA_ITEMS = [
+    { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓', desc: '看透市場本質' },
+    { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️' },
+    { id: 'g3', name: '科斯托蘭尼之狗', rarity: 'R', icon: '🐕', desc: '主人與狗的牽絆' },
+    { id: 'g4', name: '約翰伯格的方舟', rarity: 'UR', icon: '⛵', desc: '指數投資終極載具' },
+    { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮', desc: '反身性理論' },
+    { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷', desc: '積少成多' },
+];
+
+const THEMES = {
+    default: { name: '冒險者', color: 'emerald', bg: 'from-emerald-900', border: 'border-emerald-500', text: 'text-emerald-400', icon: <Zap className="w-4 h-4"/> },
+    paladin: { name: '聖騎士', color: 'yellow', bg: 'from-yellow-900', border: 'border-yellow-500', text: 'text-yellow-400', icon: <ShieldCheck className="w-4 h-4"/> }, 
+    berserker: { name: '狂戰士', color: 'red', bg: 'from-red-900', border: 'border-red-500', text: 'text-red-400', icon: <Swords className="w-4 h-4"/> }, 
+    assassin: { name: '刺客', color: 'purple', bg: 'from-purple-900', border: 'border-purple-500', text: 'text-purple-400', icon: <Zap className="w-4 h-4"/> }, 
+    merchant: { name: '大商賈', color: 'blue', bg: 'from-blue-900', border: 'border-blue-500', text: 'text-blue-400', icon: <Coins className="w-4 h-4"/> }, 
+};
 
 // ==========================================
 // 2. 工具函數
@@ -68,7 +71,7 @@ const safeVal = (v: any): number => {
 };
 
 // ==========================================
-// 3. 計算邏輯 (內建)
+// 3. 內建計算邏輯
 // ==========================================
 
 const calculateLoanPayment = (loan: Loan) => {
@@ -123,9 +126,9 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 };
 
 // ==========================================
-// 4. 儲存服務
+// 4. 儲存服務 (使用 v16_clean 避免資料衝突)
 // ==========================================
-const STORAGE_KEY = 'baozutang_data_v15_final'; // 新 Key
+const STORAGE_KEY = 'baozutang_data_v16_clean';
 const CLOUD_CONFIG_KEY = 'baozutang_cloud_config';
 
 const StorageService = {
@@ -361,6 +364,18 @@ const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalM
             ) : <div className="flex-1 flex items-center justify-center text-slate-600 text-xs italic">尚無寶物</div>}
         </div>
       </div>
+      <div className="mt-8 bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
+          <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂 (Hall of Fame)</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {achievements.map(ach => (
+                  <div key={ach.id} className={`relative p-3 rounded-xl border flex items-center gap-3 transition-all duration-500 group ${ach.unlocked ? `bg-slate-950/80 ${ach.color} shadow-lg` : 'bg-slate-950/30 border-slate-800 opacity-60 grayscale'}`}>
+                      <div className={`p-2 rounded-full shadow-lg ${ach.unlocked ? 'bg-slate-900 text-white shadow-current/20' : 'bg-slate-800 text-slate-600'}`}>{ach.unlocked ? ach.icon : <Lock className="w-5 h-5" />}</div>
+                      <div className="flex-1 min-w-0"><div className={`text-xs font-bold truncate ${ach.unlocked ? 'text-white' : 'text-slate-500'}`}>{ach.name}</div><div className="text-[10px] text-slate-400 truncate">{ach.desc}</div></div>
+                      {ach.unlocked && <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />}
+                  </div>
+              ))}
+          </div>
+      </div>
     </>
   );
 };
@@ -404,10 +419,13 @@ const App: React.FC = () => {
           const { etfs, loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, allocation, collection: c, tokens: t } = result.data as any;
           setEtfs(Array.isArray(etfs) ? etfs.map((e: any) => ({ ...e, category: e.category || 'dividend', code: e.code || e.id })) : INITIAL_ETFS);
           setLoans(Array.isArray(loans) ? loans : INITIAL_LOANS);
-          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
-          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); setTaxStatus(taxStatus || INITIAL_TAX_STATUS);
+          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); 
+          setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
+          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); 
+          setTaxStatus(taxStatus ? { ...INITIAL_TAX_STATUS, ...taxStatus } : INITIAL_TAX_STATUS);
           setAllocation(allocation || INITIAL_ALLOCATION);
-          setCollection(c || []); setTokens(t || 0);
+          setCollection(Array.isArray(c) ? c : []); 
+          setTokens(typeof t === 'number' ? t : 0);
         }
       } catch (error) { console.error("Init failed", error); } finally { setIsInitializing(false); }
     };
@@ -476,6 +494,7 @@ const App: React.FC = () => {
       ];
   }, [fireMetrics, etfs, totalMarketValue, totalStockDebt, unrealizedPL, actualHedging]);
 
+  // 圖表
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
   const remainingFunds = allocation.totalFunds - (actualDividend + actualHedging + actualActive);
   const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
@@ -569,13 +588,29 @@ const App: React.FC = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         <div className="xl:col-span-4 space-y-6">
-          <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2><div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div><div className={`text-[10px] mt-1 text-right ${remainingFunds >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{remainingFunds >= 0 ? `尚未配置資金: ${formatMoney(remainingFunds)}` : `⚠️ 超出預算: ${formatMoney(Math.abs(remainingFunds))}`}</div></div><div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800"><div><div className="flex justify-between text-xs mb-1"><span className="text-emerald-400 font-bold">配息型</span><div className="flex items-center gap-1"><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-emerald-400 border-b border-emerald-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-amber-400 font-bold">避險型</span><div className="flex items-center gap-1"><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-amber-400 border-b border-amber-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-purple-400 font-bold">主動型</span><div className="flex items-center gap-1"><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-purple-400 border-b border-purple-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive/allocation.totalFunds)*100)}%`}}></div></div></div></div></div></section>
           
+          {/* 積木 2: 資產清單 (左側) */}
           <AssetList etfs={etfs} setEtfs={setEtfs} />
-          <FinanceControl loans={loans} stockLoan={stockLoan} globalMarginLoan={globalMarginLoan} creditLoan={creditLoan} taxStatus={taxStatus} updateLoan={updateLoan} setStockLoan={setStockLoan} setGlobalMarginLoan={setGlobalMarginLoan} setCreditLoan={setCreditLoan} setTaxStatus={setTaxStatus} />
+          
+          {/* 積木 3: 財務控制 (左側) */}
+          <FinanceControl 
+            loans={loans} 
+            stockLoan={stockLoan} 
+            globalMarginLoan={globalMarginLoan} 
+            creditLoan={creditLoan} 
+            taxStatus={taxStatus} 
+            updateLoan={updateLoan} 
+            setStockLoan={setStockLoan} 
+            setGlobalMarginLoan={setGlobalMarginLoan} 
+            setCreditLoan={setCreditLoan} 
+            setTaxStatus={setTaxStatus} 
+          />
         </div>
 
+        {/* 右側: 圓餅圖與統計 */}
         <div className="xl:col-span-8 space-y-6">
+          <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2><div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div><div className={`text-[10px] mt-1 text-right ${remainingFunds >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{remainingFunds >= 0 ? `尚未配置資金: ${formatMoney(remainingFunds)}` : `⚠️ 超出預算: ${formatMoney(Math.abs(remainingFunds))}`}</div></div><div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800"><div><div className="flex justify-between text-xs mb-1"><span className="text-emerald-400 font-bold">配息型</span><div className="flex items-center gap-1"><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-emerald-400 border-b border-emerald-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-amber-400 font-bold">避險型</span><div className="flex items-center gap-1"><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-amber-400 border-b border-amber-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-purple-400 font-bold">主動型</span><div className="flex items-center gap-1"><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-purple-400 border-b border-purple-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive/allocation.totalFunds)*100)}%`}}></div></div></div></div></div></section>
+          
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 relative overflow-hidden"><div className="absolute right-0 top-0 p-3 opacity-10"><DollarSign className="w-12 h-12"/></div><div className="text-slate-500 text-xs uppercase tracking-wider">年度淨現金流</div><div className={`text-2xl font-black ${safeVal(yearlyNetPosition) < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(safeVal(yearlyNetPosition))}</div></div>
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 relative overflow-hidden"><div className="absolute right-0 top-0 p-3 opacity-10"><Banknote className="w-12 h-12"/></div><div className="text-slate-500 text-xs uppercase tracking-wider">總資產市值</div><div className="text-2xl font-black text-blue-400">{formatMoney(totalMarketValue)}</div><div className={`text-[10px] ${unrealizedPL>=0?'text-emerald-500':'text-red-500'}`}>損益 {formatMoney(unrealizedPL)}</div></div>
