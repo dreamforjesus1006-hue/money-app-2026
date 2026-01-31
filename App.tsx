@@ -7,7 +7,7 @@ import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers } from 'lucide-react';
 
-// --- 常數定義 ---
+// --- 1. 常數定義 ---
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#8b5cf6', cash: '#334155' };
 const BROKERAGE_RATE = 0.001425;
 const QUOTES = ["「別人恐懼我貪婪。」— 巴菲特", "「長期而言，股市是稱重機。」", "「不要虧損。」", "「複利是世界第八大奇蹟。」"];
@@ -33,9 +33,9 @@ interface ExtendedCloudConfig extends CloudConfig {
     priceSourceUrl?: string;
 }
 
-// --- 子元件定義 ---
+// --- 2. 子元件 (放在這裡最安全，避免找不到檔案) ---
 
-// 1. FinanceControl
+// [子元件] 財務控制
 const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, updateLoan, setStockLoan, setGlobalMarginLoan, setCreditLoan, setTaxStatus }: any) => {
   return (
     <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
@@ -57,7 +57,7 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
               <div><label className="text-[10px] text-slate-500 block">寬限期(月)</label><input type="number" value={loan.gracePeriod} onChange={(e) => updateLoan(idx, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div>
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2 p-2 bg-slate-900/50 rounded border border-slate-800">
-              <div><label className="text-[9px] text-blue-400 block">一段利率 %</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
+              <div><label className="text-[9px] text-blue-400 block">一段利率 %</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-950 border border-slate-700 rounded px-1 text-xs" /></div>
               <div><label className="text-[9px] text-blue-400 block">一段月數</label><input type="number" value={loan.rate1Months} onChange={(e) => updateLoan(idx, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
               <div><label className="text-[9px] text-blue-400 block">二段利率 %</label><input type="number" value={loan.rate2} onChange={(e) => updateLoan(idx, 'rate2', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
             </div>
@@ -114,7 +114,7 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
   );
 };
 
-// 2. AssetList
+// [子元件] 資產清單
 const AssetList = ({ etfs, setEtfs }: any) => {
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
@@ -259,7 +259,7 @@ const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalM
   );
 };
 
-// --- 主程式 ---
+// --- 主程式 (App) ---
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -271,10 +271,8 @@ const App: React.FC = () => {
   const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
   const [gachaAnimating, setGachaAnimating] = useState(false);
   const [gachaResult, setGachaResult] = useState<any>(null);
-  
   const [collection, setCollection] = useState<{id: string, count: number}[]>([]);
   const [tokens, setTokens] = useState(0);
-
   const [cloudConfig, setCloudConfig] = useState<ExtendedCloudConfig>({ apiKey: '', projectId: 'baozutang-finance', syncId: 'tony1006', enabled: true, priceSourceUrl: '' });
   const [etfs, setEtfs] = useState<ETF[]>(INITIAL_ETFS);
   const [loans, setLoans] = useState<Loan[]>(INITIAL_LOANS);
@@ -329,6 +327,7 @@ const App: React.FC = () => {
   const totalRealDebt = loans.reduce((acc, l) => acc + l.principal, 0) + creditLoan.principal;
   const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
 
+  // ⚠️ 關鍵修正：確保這些變數在 skills 之前被定義！
   const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
@@ -362,6 +361,7 @@ const App: React.FC = () => {
       return THEMES.default;
   }, [totalMarketValue, totalStockDebt, actualHedging, actualActive, actualDividend]);
 
+  // ⚠️ 關鍵修正：現在 skills 可以安全地讀取 actualHedging 了
   const skills = useMemo(() => { 
       return [
         { name: '股息水流斬', level: Math.floor(Math.min(100, (fireMetrics.annualPassive/500000)*100)), icon: <RefreshCw className="w-4 h-4"/>, color:'text-emerald-400', bar:'bg-emerald-500' },
@@ -375,19 +375,7 @@ const App: React.FC = () => {
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
   const remainingFunds = allocation.totalFunds - (actualDividend + actualHedging + actualActive);
   const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
-  const snowballData = useMemo(() => { const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05; const annualSavings = yearlyNetPosition.toNumber() > 0 ? yearlyNetPosition.toNumber() : 0; const data = []; let currentWealth = totalMarketValue; let currentIncome = fireMetrics.annualPassive; for (let year = 0; year <= 10; year++) { data.push({ year: `Y${year}`, wealth: Math.floor(currentWealth), income: Math.floor(currentIncome) }); currentWealth = currentWealth * 1.05 + (0 ? currentIncome : 0) + annualSavings; currentIncome = currentWealth * avgYield; } return data; }, [monthlyFlows, totalMarketValue, yearlyNetPosition, fireMetrics]);
-
-  const rebalanceData = useMemo(() => {
-      const total = allocation.totalFunds;
-      const tDiv = total * (allocation.dividendRatio/100);
-      const tHed = total * (allocation.hedgingRatio/100);
-      const tAct = total * (allocation.activeRatio/100);
-      return [
-          { name: '配息型', actual: actualDividend, target: tDiv, diff: actualDividend - tDiv, color: 'text-emerald-400' },
-          { name: '避險型', actual: actualHedging, target: tHed, diff: actualHedging - tHed, color: 'text-amber-400' },
-          { name: '主動型', actual: actualActive, target: tAct, diff: actualActive - tAct, color: 'text-purple-400' },
-      ];
-  }, [allocation, actualDividend, actualHedging, actualActive]);
+  const snowballData = useMemo(() => { const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05; const annualSavings = yearlyNetPosition.toNumber() > 0 ? yearlyNetPosition.toNumber() : 0; const data = []; let currentWealth = totalMarketValue; let currentIncome = fireMetrics.annualPassive; for (let year = 0; year <= 10; year++) { data.push({ year: `Y${year}`, wealth: Math.floor(currentWealth), income: Math.floor(currentIncome) }); currentWealth = currentWealth * 1.05 + (reinvest ? currentIncome : 0) + annualSavings; currentIncome = currentWealth * avgYield; } return data; }, [monthlyFlows, totalMarketValue, yearlyNetPosition, reinvest, fireMetrics]);
 
   // 7. 操作 Handlers
   const handleUpdatePrices = async () => {
@@ -413,6 +401,18 @@ const App: React.FC = () => {
   const handleGacha = () => { if (tokens < 1) { alert('代幣不足！'); return; } setTokens(prev => prev - 1); setGachaAnimating(true); setGachaResult(null); setTimeout(() => { const item = GACHA_ITEMS[Math.floor(Math.random() * GACHA_ITEMS.length)]; setGachaResult(item); setGachaAnimating(false); setCollection(prev => { const existing = prev.find(i => i.id === item.id); if (existing) return prev.map(i => i.id === item.id ? { ...i, count: i.count + 1 } : i); return [...prev, { id: item.id, count: 1 }]; }); }, 2000); };
   
   useEffect(() => { const calculatedTokens = Math.floor(unrealizedPL / 10000); if (calculatedTokens > tokens) setTokens(calculatedTokens > 0 ? calculatedTokens : 0); }, [unrealizedPL]);
+
+  const rebalanceData = useMemo(() => {
+      const total = allocation.totalFunds;
+      const tDiv = total * (allocation.dividendRatio/100);
+      const tHed = total * (allocation.hedgingRatio/100);
+      const tAct = total * (allocation.activeRatio/100);
+      return [
+          { name: '配息型', actual: actualDividend, target: tDiv, diff: actualDividend - tDiv, color: 'text-emerald-400' },
+          { name: '避險型', actual: actualHedging, target: tHed, diff: actualHedging - tHed, color: 'text-amber-400' },
+          { name: '主動型', actual: actualActive, target: tAct, diff: actualActive - tAct, color: 'text-purple-400' },
+      ];
+  }, [allocation, actualDividend, actualHedging, actualActive]);
 
   if (isInitializing) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400 font-mono">系統啟動中...</p></div>;
 
