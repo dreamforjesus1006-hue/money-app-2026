@@ -1,17 +1,15 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area } from 'recharts';
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers } from 'lucide-react';
-import Decimal from 'decimal.js';
 
 // ==========================================
-// 1. 核心定義與常數 (全部內建，不再依賴外部檔案)
+// 1. 核心定義 (無外掛版)
 // ==========================================
 
 const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#8b5cf6', cash: '#334155' };
 const QUOTES = ["「別人恐懼我貪婪。」— 巴菲特", "「長期而言，股市是稱重機。」", "「不要虧損。」", "「複利是世界第八大奇蹟。」"];
 
-// 模擬 Enum
 const MortgageType = {
   PrincipalAndInterest: 'PrincipalAndInterest',
   Principal: 'Principal'
@@ -26,7 +24,6 @@ interface CreditLoan { principal: number; rate: number; totalMonths: number; pai
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { apiKey: string; projectId: string; syncId: string; enabled: boolean; priceSourceUrl?: string; }
-interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; collection?: {id:string, count:number}[]; tokens?: number; }
 
 // 預設值
 const INITIAL_ETFS: ETF[] = [
@@ -35,19 +32,18 @@ const INITIAL_ETFS: ETF[] = [
 ];
 const INITIAL_LOANS: Loan[] = [{ id: 'l1', name: '房貸一', principal: 0, rate1: 2.06, rate1Months: 24, rate2: 2.15, totalMonths: 360, paidMonths: 0, gracePeriod: 36, type: 'PrincipalAndInterest' }];
 const INITIAL_STOCK_LOAN: StockLoan = { principal: 0, rate: 2.5, maintenanceLimit: 130 };
-const INITIAL_GLOBAL_MARGIN_LOAN: StockLoan = { principal: 0, rate: 6.5 }; // 全局融資
+const INITIAL_GLOBAL_MARGIN_LOAN: StockLoan = { principal: 0, rate: 6.5 };
 const INITIAL_CREDIT_LOAN: CreditLoan = { principal: 0, rate: 2.8, totalMonths: 84, paidMonths: 0 };
 const INITIAL_TAX_STATUS: TaxStatus = { salaryIncome: 0, livingExpenses: 30000, dependents: 0, hasSpouse: false, isDisabled: false };
 const INITIAL_ALLOCATION: AllocationConfig = { totalFunds: 0, dividendRatio: 70, hedgingRatio: 20, activeRatio: 10 };
 
-// 轉蛋物品
 const GACHA_ITEMS = [
-    { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓', desc: '看透市場本質' },
-    { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️', desc: '多元思維模型' },
-    { id: 'g3', name: '科斯托蘭尼之狗', rarity: 'R', icon: '🐕', desc: '主人與狗的牽絆' },
-    { id: 'g4', name: '約翰伯格的方舟', rarity: 'UR', icon: '⛵', desc: '指數投資終極載具' },
-    { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮', desc: '反身性理論' },
-    { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷', desc: '積少成多' },
+    { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓' },
+    { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️' },
+    { id: 'g3', name: '科斯托蘭尼之狗', rarity: 'R', icon: '🐕' },
+    { id: 'g4', name: '約翰伯格的方舟', rarity: 'UR', icon: '⛵' },
+    { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮' },
+    { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷' },
 ];
 
 const THEMES = {
@@ -59,32 +55,26 @@ const THEMES = {
 };
 
 // ==========================================
-// 2. 工具函數 (Helpers)
+// 2. 工具函數 (移除 Decimal 依賴)
 // ==========================================
 
-const formatMoney = (val: number | Decimal | undefined) => {
-  if (val === undefined || val === null) return '$0';
-  const num = typeof val === 'number' ? val : val.toNumber();
-  return `$${Math.floor(num).toLocaleString()}`;
+const formatMoney = (val: any) => {
+  if (val === undefined || val === null || isNaN(Number(val))) return '$0';
+  return `$${Math.floor(Number(val)).toLocaleString()}`;
 };
 
 const safeVal = (v: any): number => {
-  if (v === undefined || v === null) return 0;
-  if (typeof v === 'number') return v;
-  if (v instanceof Decimal) return v.toNumber();
   return Number(v) || 0;
 };
 
 // ==========================================
-// 3. 內建計算邏輯 (PortfolioCalculator)
+// 3. 內建計算邏輯 (純數學版)
 // ==========================================
 
 const calculateLoanPayment = (loan: Loan) => {
-    // 簡易版房貸計算
     if (loan.paidMonths < loan.gracePeriod) {
         return Math.floor(loan.principal * (loan.rate1 / 100 / 12));
     }
-    // 寬限期後本息攤還估算
     const rate = (loan.paidMonths < loan.rate1Months ? loan.rate1 : loan.rate2) / 100 / 12;
     const remainingMonths = loan.totalMonths - loan.paidMonths;
     if (remainingMonths <= 0) return 0;
@@ -93,64 +83,49 @@ const calculateLoanPayment = (loan: Loan) => {
 
 const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, creditLoan: CreditLoan, globalMarginLoan: StockLoan, taxStatus: TaxStatus) => {
     const monthlyFlows = [];
-    let totalDividendYear = new Decimal(0);
+    let totalDividendYear = 0;
     
-    // 計算每個月的現金流
     for (let m = 1; m <= 12; m++) {
-        let dividendInflow = new Decimal(0);
+        let dividendInflow = 0;
         etfs.forEach(etf => {
             if (etf.payMonths?.includes(m)) {
-                dividendInflow = dividendInflow.plus(new Decimal(etf.shares).times(etf.dividendPerShare));
+                dividendInflow += (etf.shares * etf.dividendPerShare);
             }
         });
         
         let loanOutflow = 0;
         loans.forEach(l => loanOutflow += calculateLoanPayment(l));
         
-        // 信貸 (本息平均攤還公式)
         const creditRate = creditLoan.rate / 100 / 12;
         const creditOutflow = creditLoan.principal > 0 ? Math.floor((creditLoan.principal * creditRate * Math.pow(1 + creditRate, creditLoan.totalMonths)) / (Math.pow(1 + creditRate, creditLoan.totalMonths) - 1)) : 0;
         
-        // 質押與融資利息
         const stockInterest = Math.floor((stockLoan.principal * (stockLoan.rate/100)/12) + (globalMarginLoan.principal * (globalMarginLoan.rate/100)/12));
         const marginInterest = etfs.reduce((acc, e) => acc + ((e.marginLoanAmount||0) * ((e.marginInterestRate||6.5)/100)/12), 0);
 
-        // 稅務預估 (二代健保 2.11%)
-        const taxWithheld = dividendInflow.times(0.0211).floor().toNumber();
+        const taxWithheld = Math.floor(dividendInflow * 0.0211);
         
-        totalDividendYear = totalDividendYear.plus(dividendInflow);
+        totalDividendYear += dividendInflow;
 
         monthlyFlows.push({
             month: m,
-            dividendInflow: dividendInflow.toNumber(),
+            dividendInflow: dividendInflow,
             loanOutflow,
             creditLoanOutflow: creditOutflow,
             stockLoanInterest: stockInterest + marginInterest,
             livingExpenses: taxStatus.livingExpenses,
             taxWithheld,
-            netFlow: dividendInflow.toNumber() - loanOutflow - creditOutflow - (stockInterest + marginInterest) - taxStatus.livingExpenses - taxWithheld
+            netFlow: dividendInflow - loanOutflow - creditOutflow - (stockInterest + marginInterest) - taxStatus.livingExpenses - taxWithheld
         });
     }
     
-    const yearlyNetPosition = monthlyFlows.reduce((acc, cur) => acc.plus(cur.netFlow), new Decimal(0));
-    return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear.times(0.0211), incomeTaxTotal: new Decimal(0) }; // 簡化所得稅
-};
-
-const runStressTest = (etfs: ETF[], stockLoan: StockLoan, globalMarginLoan: StockLoan) => {
-    // 簡單版壓力測試，防止 crash
-    return { survivalRate: 100, warnings: [] }; 
-};
-
-// 整合計算機物件
-const PortfolioCalculator = {
-    generateCashFlow,
-    runStressTest
+    const yearlyNetPosition = monthlyFlows.reduce((acc, cur) => acc + cur.netFlow, 0);
+    return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear * 0.0211, incomeTaxTotal: 0 }; 
 };
 
 // ==========================================
-// 4. 內建儲存服務 (StorageService)
+// 4. 儲存服務
 // ==========================================
-const STORAGE_KEY = 'baozutang_data_v13';
+const STORAGE_KEY = 'baozutang_data_v13_safe';
 const CLOUD_CONFIG_KEY = 'baozutang_cloud_config';
 
 const StorageService = {
@@ -176,9 +151,6 @@ const StorageService = {
         a.href = url;
         a.download = `baozutang_backup_${new Date().toISOString().split('T')[0]}.json`;
         a.click();
-    },
-    getStorageUsage: () => {
-        return { used: 0, total: 5000000 };
     }
 };
 
@@ -196,8 +168,8 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
             <div className="flex justify-between mb-2 items-center">
               <input type="text" value={loan.name} onChange={(e) => updateLoan(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 w-1/2 text-sm" />
               <select value={loan.type} onChange={(e) => updateLoan(idx, 'type', e.target.value)} className="bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400">
-                <option value={MortgageType.PrincipalAndInterest}>本息攤還</option>
-                <option value={MortgageType.Principal}>本金攤還</option>
+                <option value="PrincipalAndInterest">本息攤還</option>
+                <option value="Principal">本金攤還</option>
               </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -484,7 +456,7 @@ const App: React.FC = () => {
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
 
   // 3. 現金流 (使用 safeVal 保護)
-  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
+  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   
   const fireMetrics = useMemo(() => { 
       const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); 
