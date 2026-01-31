@@ -1,6 +1,7 @@
 import React from 'react';
 import { Swords, Crown, Skull, Scroll, Trophy, Coins, Gem, Sparkles, RefreshCw, Zap, Lock, Aperture } from 'lucide-react';
-import { formatMoney } from '../decimal';
+// 👇 注意這裡改成了 ../../decimal
+import { formatMoney } from '../../decimal';
 
 // 定義轉蛋物品 (如果 App.tsx 沒傳進來，這邊定義一份 fallback)
 interface GameHUDProps {
