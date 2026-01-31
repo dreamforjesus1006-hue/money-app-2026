@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers } from 'lucide-react';
 
 // ==========================================
-// 1. 核心定義區 (全部內建，不依賴外部檔案)
+// 1. 核心定義 (安全無外掛版)
 // ==========================================
 
 const BROKERAGE_RATE = 0.001425;
@@ -24,9 +24,8 @@ interface CreditLoan { principal: number; rate: number; totalMonths: number; pai
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { apiKey: string; projectId: string; syncId: string; enabled: boolean; priceSourceUrl?: string; }
-interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; collection?: {id:string, count:number}[]; tokens?: number; }
 
-// 初始預設值
+// 預設值 (確保不會 undefined)
 const INITIAL_ETFS: ETF[] = [
   { id: '1', code: '0056', name: '元大高股息', shares: 0, costPrice: 0, currentPrice: 38.5, dividendPerShare: 2.8, dividendType: 'per_period', payMonths: [1, 4, 7, 10], category: 'dividend', marginLoanAmount: 0 },
   { id: '2', code: '00919', name: '群益精選高息', shares: 0, costPrice: 0, currentPrice: 26.2, dividendPerShare: 2.4, dividendType: 'per_period', payMonths: [3, 6, 9, 12], category: 'dividend', marginLoanAmount: 0 },
@@ -64,12 +63,8 @@ const formatMoney = (val: any) => {
   return `$${Math.floor(Number(val)).toLocaleString()}`;
 };
 
-const safeVal = (v: any): number => {
-  return Number(v) || 0;
-};
-
 // ==========================================
-// 3. 內建計算邏輯 (PortfolioCalculator)
+// 3. 內建計算邏輯
 // ==========================================
 
 const calculateLoanPayment = (loan: Loan) => {
@@ -88,20 +83,22 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     
     for (let m = 1; m <= 12; m++) {
         let dividendInflow = 0;
-        etfs.forEach(etf => {
+        // 防呆：確保 etfs 是陣列
+        (etfs || []).forEach(etf => {
             if (etf.payMonths?.includes(m)) {
                 dividendInflow += (etf.shares * etf.dividendPerShare);
             }
         });
         
         let loanOutflow = 0;
-        loans.forEach(l => loanOutflow += calculateLoanPayment(l));
+        // 防呆：確保 loans 是陣列
+        (loans || []).forEach(l => loanOutflow += calculateLoanPayment(l));
         
         const creditRate = creditLoan.rate / 100 / 12;
         const creditOutflow = creditLoan.principal > 0 ? Math.floor((creditLoan.principal * creditRate * Math.pow(1 + creditRate, creditLoan.totalMonths)) / (Math.pow(1 + creditRate, creditLoan.totalMonths) - 1)) : 0;
         
         const stockInterest = Math.floor((stockLoan.principal * (stockLoan.rate/100)/12) + (globalMarginLoan.principal * (globalMarginLoan.rate/100)/12));
-        const marginInterest = etfs.reduce((acc, e) => acc + ((e.marginLoanAmount||0) * ((e.marginInterestRate||6.5)/100)/12), 0);
+        const marginInterest = (etfs || []).reduce((acc, e) => acc + ((e.marginLoanAmount||0) * ((e.marginInterestRate||6.5)/100)/12), 0);
 
         const taxWithheld = Math.floor(dividendInflow * 0.0211);
         
@@ -124,19 +121,26 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 };
 
 // ==========================================
-// 4. 內建儲存服務
+// 4. 儲存服務 (使用全新 Key: v14_clean)
 // ==========================================
-const STORAGE_KEY = 'baozutang_data_v13_final';
+const STORAGE_KEY = 'baozutang_data_v14_clean'; // 🔴 強制使用新倉庫，避開舊資料
 const CLOUD_CONFIG_KEY = 'baozutang_cloud_config';
 
 const StorageService = {
     saveData: async (data: any) => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        return true;
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            return true;
+        } catch (e) { console.error("Save failed", e); return false; }
     },
     loadData: async () => {
-        const local = localStorage.getItem(STORAGE_KEY);
-        return { data: local ? JSON.parse(local) : null, source: 'local' };
+        try {
+            const local = localStorage.getItem(STORAGE_KEY);
+            return { data: local ? JSON.parse(local) : null, source: 'local' };
+        } catch (e) {
+            console.error("Load failed", e);
+            return { data: null, source: 'local' };
+        }
     },
     saveCloudConfig: (config: any) => {
         localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
@@ -156,7 +160,7 @@ const StorageService = {
 };
 
 // ==========================================
-// 5. 內建子元件
+// 5. 內建子元件 (FinanceControl)
 // ==========================================
 
 const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, updateLoan, setStockLoan, setGlobalMarginLoan, setCreditLoan, setTaxStatus }: any) => {
@@ -164,8 +168,8 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
     <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
       <div>
         <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><DollarSign className="w-4 h-4" /> 房貸與信貸</h2>
-        {loans.map((loan: any, idx: number) => (
-          <div key={loan.id} className="mb-4 p-3 bg-slate-950 rounded border border-slate-800">
+        {(loans || []).map((loan: any, idx: number) => (
+          <div key={loan.id || idx} className="mb-4 p-3 bg-slate-950 rounded border border-slate-800">
             <div className="flex justify-between mb-2 items-center">
               <input type="text" value={loan.name} onChange={(e) => updateLoan(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 w-1/2 text-sm" />
               <select value={loan.type} onChange={(e) => updateLoan(idx, 'type', e.target.value)} className="bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400">
@@ -237,6 +241,10 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
   );
 };
 
+// ==========================================
+// 6. 內建子元件 (AssetList)
+// ==========================================
+
 const AssetList = ({ etfs, setEtfs }: any) => {
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
@@ -291,7 +299,7 @@ const AssetList = ({ etfs, setEtfs }: any) => {
     <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg">
       <h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><Activity className="w-5 h-5 text-emerald-400" /> 裝備清單</h2>
       <div className="space-y-3">
-        {etfs.map((etf: any, idx: number) => {
+        {(etfs || []).map((etf: any, idx: number) => {
           const hasLots = etf.lots && etf.lots.length > 0;
           const isExpanded = expandedEtfId === etf.id;
           const isBuying = activeBuyId === etf.id;
@@ -318,6 +326,10 @@ const AssetList = ({ etfs, setEtfs }: any) => {
     </section>
   );
 };
+
+// ==========================================
+// 7. 內建子元件 (GameHUD)
+// ==========================================
 
 const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalMarketValue, totalDebt, skills, annualPassiveIncome, hasHedging, hasLeverage, netWorthPositive, collection, currentClass }: any) => {
   const achievements = [
@@ -381,7 +393,7 @@ const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalM
 };
 
 // ==========================================
-// 6. 主程式 (App) - 總指揮官
+// 8. 主程式 (App) - 總指揮官
 // ==========================================
 
 const App: React.FC = () => {
@@ -407,7 +419,7 @@ const App: React.FC = () => {
   const [allocation, setAllocation] = useState<AllocationConfig>(INITIAL_ALLOCATION);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 初始化
+  // 初始化 (強制使用新 key 以避免舊資料衝突)
   useEffect(() => {
     const initData = async () => {
       try {
@@ -415,13 +427,17 @@ const App: React.FC = () => {
         if (savedConfig) setCloudConfig(prev => ({ ...prev, ...savedConfig }));
         const result = await StorageService.loadData();
         if (result.data) {
+          // 防呆機制：如果讀取到的資料結構不完整，使用預設值
           const { etfs, loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, allocation, collection: c, tokens: t } = result.data as any;
-          setEtfs((etfs || INITIAL_ETFS).map((e: any) => ({ ...e, category: e.category || 'dividend', code: e.code || e.id })));
-          let mergedLoans = loans || INITIAL_LOANS; if (mergedLoans.length < INITIAL_LOANS.length) mergedLoans = [...mergedLoans, INITIAL_LOANS[1]]; setLoans(mergedLoans);
-          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
-          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); setTaxStatus({ ...INITIAL_TAX_STATUS, ...taxStatus });
+          setEtfs(Array.isArray(etfs) ? etfs.map((e: any) => ({ ...e, category: e.category || 'dividend', code: e.code || e.id })) : INITIAL_ETFS);
+          setLoans(Array.isArray(loans) ? loans : INITIAL_LOANS);
+          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); 
+          setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
+          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); 
+          setTaxStatus(taxStatus ? { ...INITIAL_TAX_STATUS, ...taxStatus } : INITIAL_TAX_STATUS);
           setAllocation(allocation || INITIAL_ALLOCATION);
-          setCollection(c || []); setTokens(t || 0);
+          setCollection(Array.isArray(c) ? c : []); 
+          setTokens(typeof t === 'number' ? t : 0);
         }
       } catch (error) { console.error("Init failed", error); } finally { setIsInitializing(false); }
     };
@@ -442,7 +458,7 @@ const App: React.FC = () => {
     }, 1000); return () => clearTimeout(timer);
   }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation, collection, tokens, isInitializing, cloudConfig]);
 
-  // --- 計算核心 (安全版) ---
+  // --- 計算核心 ---
   const totalMarketValue = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * etf.currentPrice), 0), [etfs]);
   const totalCost = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * (etf.costPrice || 0)), 0), [etfs]);
   const unrealizedPL = totalMarketValue - totalCost;
@@ -493,8 +509,9 @@ const App: React.FC = () => {
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
   const remainingFunds = allocation.totalFunds - (actualDividend + actualHedging + actualActive);
   const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
-  const snowballData = useMemo(() => { const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05; const annualSavings = safeVal(yearlyNetPosition); const data = []; let currentWealth = totalMarketValue; let currentIncome = fireMetrics.annualPassive; for (let year = 0; year <= 10; year++) { data.push({ year: `Y${year}`, wealth: Math.floor(currentWealth), income: Math.floor(currentIncome) }); currentWealth = currentWealth * 1.05 + (reinvest ? currentIncome : 0) + annualSavings; currentIncome = currentWealth * avgYield; } return data; }, [monthlyFlows, totalMarketValue, yearlyNetPosition, reinvest, fireMetrics]);
+  const snowballData = useMemo(() => { const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05; const annualSavings = safeVal(yearlyNetPosition); const data = []; let currentWealth = totalMarketValue; let currentIncome = fireMetrics.annualPassive; for (let year = 0; year <= 10; year++) { data.push({ year: `Y${year}`, wealth: Math.floor(currentWealth), income: Math.floor(currentIncome) }); currentWealth = currentWealth * 1.05 + annualSavings; currentIncome = currentWealth * avgYield; } return data; }, [monthlyFlows, totalMarketValue, yearlyNetPosition, fireMetrics]);
 
+  // Handlers
   const handleUpdatePrices = async () => {
       if (!cloudConfig.priceSourceUrl) { alert('請先設定 Google Sheet 連結！'); setShowSettings(true); return; }
       setIsUpdatingPrices(true);
