@@ -7,7 +7,7 @@ import { StorageService } from './storage';
 import { formatMoney } from './decimal';
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers } from 'lucide-react';
 
-// --- 1. 常數定義 ---
+// --- 常數定義 ---
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#8b5cf6', cash: '#334155' };
 const BROKERAGE_RATE = 0.001425;
 const QUOTES = ["「別人恐懼我貪婪。」— 巴菲特", "「長期而言，股市是稱重機。」", "「不要虧損。」", "「複利是世界第八大奇蹟。」"];
@@ -33,9 +33,9 @@ interface ExtendedCloudConfig extends CloudConfig {
     priceSourceUrl?: string;
 }
 
-// --- 2. 子元件定義 (直接放在這裡，避免 Import 錯誤) ---
+// --- 子元件定義 ---
 
-// [子元件] 財務控制
+// 1. FinanceControl
 const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, updateLoan, setStockLoan, setGlobalMarginLoan, setCreditLoan, setTaxStatus }: any) => {
   return (
     <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
@@ -114,7 +114,7 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
   );
 };
 
-// [子元件] 資產清單
+// 2. AssetList
 const AssetList = ({ etfs, setEtfs }: any) => {
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
@@ -197,7 +197,7 @@ const AssetList = ({ etfs, setEtfs }: any) => {
   );
 };
 
-// --- 子元件 3: GameHUD (遊戲介面) ---
+// 3. GameHUD
 const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalMarketValue, totalDebt, skills, annualPassiveIncome, hasHedging, hasLeverage, netWorthPositive, collection, currentClass }: any) => {
   const achievements = [
       { id: '1', name: '初心冒險者', icon: <Swords className="w-5 h-5"/>, desc: '開始投資旅程', unlocked: totalMarketValue > 0, color: 'text-slate-200 border-slate-500 shadow-slate-500/20' },
@@ -259,7 +259,7 @@ const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalM
   );
 };
 
-// --- 主程式 (App) ---
+// --- 主程式 ---
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -271,8 +271,10 @@ const App: React.FC = () => {
   const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
   const [gachaAnimating, setGachaAnimating] = useState(false);
   const [gachaResult, setGachaResult] = useState<any>(null);
+  
   const [collection, setCollection] = useState<{id: string, count: number}[]>([]);
   const [tokens, setTokens] = useState(0);
+
   const [cloudConfig, setCloudConfig] = useState<ExtendedCloudConfig>({ apiKey: '', projectId: 'baozutang-finance', syncId: 'tony1006', enabled: true, priceSourceUrl: '' });
   const [etfs, setEtfs] = useState<ETF[]>(INITIAL_ETFS);
   const [loans, setLoans] = useState<Loan[]>(INITIAL_LOANS);
@@ -283,6 +285,7 @@ const App: React.FC = () => {
   const [allocation, setAllocation] = useState<AllocationConfig>(INITIAL_ALLOCATION);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 1. 初始化資料
   useEffect(() => {
     const initData = async () => {
       try {
@@ -303,6 +306,7 @@ const App: React.FC = () => {
     initData();
   }, []);
 
+  // 2. 自動存檔
   useEffect(() => {
     if (isInitializing) return;
     setSaveStatus('saving');
@@ -316,6 +320,76 @@ const App: React.FC = () => {
     }, 1000); return () => clearTimeout(timer);
   }, [etfs, loans, stockLoan, creditLoan, taxStatus, globalMarginLoan, allocation, collection, tokens, isInitializing, cloudConfig]);
 
+  // 3. 基礎計算 (最優先)
+  const totalMarketValue = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * etf.currentPrice), 0), [etfs]);
+  const totalCost = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * (etf.costPrice || 0)), 0), [etfs]);
+  const unrealizedPL = totalMarketValue - totalCost;
+  
+  const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((acc, e) => acc + (e.marginLoanAmount || 0), 0);
+  const totalRealDebt = loans.reduce((acc, l) => acc + l.principal, 0) + creditLoan.principal;
+  const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
+
+  const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+
+  // 4. 進階計算 (依賴基礎計算)
+  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
+  
+  const fireMetrics = useMemo(() => { 
+      const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); 
+      const inc = monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0); 
+      return { ratio: exp>0?(inc/exp)*100:0, annualPassive: inc, annualExpenses: exp }; 
+  }, [monthlyFlows]);
+
+  // 5. 遊戲與顯示 (依賴進階計算)
+  const combatPower = useMemo(() => Math.floor((totalMarketValue/10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
+  
+  const levelInfo = useMemo(() => { 
+      const r = fireMetrics.ratio; 
+      if(r>=100) return {title:'財富國王 👑', color:'text-yellow-400', bar:'bg-gradient-to-r from-yellow-400 to-orange-500', next:null}; 
+      if(r>=50) return {title:'資產領主 ⚔️', color:'text-purple-400', bar:'bg-gradient-to-r from-purple-500 to-pink-500', next:100}; 
+      if(r>=20) return {title:'理財騎士 🛡️', color:'text-blue-400', bar:'bg-gradient-to-r from-blue-400 to-cyan-400', next:50}; 
+      return {title:'初心冒險者 🪵', color:'text-slate-400', bar:'bg-slate-600', next:20}; 
+  }, [fireMetrics]);
+
+  const currentClass = useMemo(() => {
+      const total = totalMarketValue || 1;
+      if (totalStockDebt > total * 0.4) return THEMES.berserker;
+      if (actualHedging > total * 0.3) return THEMES.merchant;
+      if (actualActive > total * 0.3) return THEMES.assassin;
+      if (actualDividend > total * 0.6) return THEMES.paladin;
+      return THEMES.default;
+  }, [totalMarketValue, totalStockDebt, actualHedging, actualActive, actualDividend]);
+
+  const skills = useMemo(() => { 
+      return [
+        { name: '股息水流斬', level: Math.floor(Math.min(100, (fireMetrics.annualPassive/500000)*100)), icon: <RefreshCw className="w-4 h-4"/>, color:'text-emerald-400', bar:'bg-emerald-500' },
+        { name: '絕對防禦', level: Math.floor(Math.min(100, (actualHedging/(totalMarketValue||1))*500)), icon: <ShieldCheck className="w-4 h-4"/>, color:'text-amber-400', bar:'bg-amber-500' },
+        { name: '槓桿爆發', level: Math.floor(Math.min(100, (totalStockDebt/5000000)*100)), icon: <Zap className="w-4 h-4"/>, color:'text-blue-400', bar:'bg-blue-500' },
+        { name: '資本增幅', level: Math.floor(Math.min(100, (unrealizedPL/1000000)*100)), icon: <TrendingUp className="w-4 h-4"/>, color:'text-purple-400', bar:'bg-purple-500' }
+      ];
+  }, [fireMetrics, etfs, totalMarketValue, totalStockDebt, unrealizedPL, actualHedging]);
+
+  // 6. 圖表數據
+  const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
+  const remainingFunds = allocation.totalFunds - (actualDividend + actualHedging + actualActive);
+  const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
+  const snowballData = useMemo(() => { const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05; const annualSavings = yearlyNetPosition.toNumber() > 0 ? yearlyNetPosition.toNumber() : 0; const data = []; let currentWealth = totalMarketValue; let currentIncome = fireMetrics.annualPassive; for (let year = 0; year <= 10; year++) { data.push({ year: `Y${year}`, wealth: Math.floor(currentWealth), income: Math.floor(currentIncome) }); currentWealth = currentWealth * 1.05 + (0 ? currentIncome : 0) + annualSavings; currentIncome = currentWealth * avgYield; } return data; }, [monthlyFlows, totalMarketValue, yearlyNetPosition, fireMetrics]);
+
+  const rebalanceData = useMemo(() => {
+      const total = allocation.totalFunds;
+      const tDiv = total * (allocation.dividendRatio/100);
+      const tHed = total * (allocation.hedgingRatio/100);
+      const tAct = total * (allocation.activeRatio/100);
+      return [
+          { name: '配息型', actual: actualDividend, target: tDiv, diff: actualDividend - tDiv, color: 'text-emerald-400' },
+          { name: '避險型', actual: actualHedging, target: tHed, diff: actualHedging - tHed, color: 'text-amber-400' },
+          { name: '主動型', actual: actualActive, target: tAct, diff: actualActive - tAct, color: 'text-purple-400' },
+      ];
+  }, [allocation, actualDividend, actualHedging, actualActive]);
+
+  // 7. 操作 Handlers
   const handleUpdatePrices = async () => {
       if (!cloudConfig.priceSourceUrl) { alert('請先設定 Google Sheet 連結！'); setShowSettings(true); return; }
       setIsUpdatingPrices(true);
@@ -336,74 +410,8 @@ const App: React.FC = () => {
   const handleExport = () => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation });
   const openLootBox = () => { setLootQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]); setShowLoot(true); };
   const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
-
-  const totalMarketValue = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * etf.currentPrice), 0), [etfs]);
-  const totalCost = useMemo(() => etfs.reduce((acc, etf) => acc + (etf.shares * (etf.costPrice || 0)), 0), [etfs]);
-  const unrealizedPL = totalMarketValue - totalCost;
-  const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((acc, e) => acc + (e.marginLoanAmount || 0), 0);
-  const totalRealDebt = loans.reduce((acc, l) => acc + l.principal, 0) + creditLoan.principal;
-  const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
-  const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => PortfolioCalculator.generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
-  const fireMetrics = useMemo(() => { const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); const inc = monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0); return { ratio: exp>0?(inc/exp)*100:0, annualPassive: inc, annualExpenses: exp }; }, [monthlyFlows]);
-  const combatPower = useMemo(() => Math.floor((totalMarketValue/10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
-  const levelInfo = useMemo(() => { const r = fireMetrics.ratio; if(r>=100) return {title:'財富國王 👑', color:'text-yellow-400', bar:'bg-gradient-to-r from-yellow-400 to-orange-500', next:null}; if(r>=50) return {title:'資產領主 ⚔️', color:'text-purple-400', bar:'bg-gradient-to-r from-purple-500 to-pink-500', next:100}; if(r>=20) return {title:'理財騎士 🛡️', color:'text-blue-400', bar:'bg-gradient-to-r from-blue-400 to-cyan-400', next:50}; return {title:'初心冒險者 🪵', color:'text-slate-400', bar:'bg-slate-600', next:20}; }, [fireMetrics]);
+  const handleGacha = () => { if (tokens < 1) { alert('代幣不足！'); return; } setTokens(prev => prev - 1); setGachaAnimating(true); setGachaResult(null); setTimeout(() => { const item = GACHA_ITEMS[Math.floor(Math.random() * GACHA_ITEMS.length)]; setGachaResult(item); setGachaAnimating(false); setCollection(prev => { const existing = prev.find(i => i.id === item.id); if (existing) return prev.map(i => i.id === item.id ? { ...i, count: i.count + 1 } : i); return [...prev, { id: item.id, count: 1 }]; }); }, 2000); };
   
-  const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
-  const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
-  const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
-  
-  const currentClass = useMemo(() => {
-      const total = totalMarketValue || 1;
-      if (totalStockDebt > total * 0.4) return THEMES.berserker;
-      if (actualHedging > total * 0.3) return THEMES.merchant;
-      if (actualActive > total * 0.3) return THEMES.assassin;
-      if (actualDividend > total * 0.6) return THEMES.paladin;
-      return THEMES.default;
-  }, [totalMarketValue, totalStockDebt, actualHedging, actualActive, actualDividend]);
-
-  const skills = useMemo(() => { 
-      return [
-        { name: '股息水流斬', level: Math.floor(Math.min(100, (fireMetrics.annualPassive/500000)*100)), icon: <RefreshCw className="w-4 h-4"/>, color:'text-emerald-400', bar:'bg-emerald-500' },
-        { name: '絕對防禦', level: Math.floor(Math.min(100, (actualHedging/(totalMarketValue||1))*500)), icon: <ShieldCheck className="w-4 h-4"/>, color:'text-amber-400', bar:'bg-amber-500' },
-        { name: '槓桿爆發', level: Math.floor(Math.min(100, (totalStockDebt/5000000)*100)), icon: <Zap className="w-4 h-4"/>, color:'text-blue-400', bar:'bg-blue-500' },
-        { name: '資本增幅', level: Math.floor(Math.min(100, (unrealizedPL/1000000)*100)), icon: <TrendingUp className="w-4 h-4"/>, color:'text-purple-400', bar:'bg-purple-500' }
-      ];
-  }, [fireMetrics, etfs, totalMarketValue, totalStockDebt, unrealizedPL, actualHedging]);
-  
-  const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
-  const remainingFunds = allocation.totalFunds - (actualDividend + actualHedging + actualActive);
-  const monthlyChartData = useMemo(() => monthlyFlows.map(f => ({ month: `${f.month}月`, income: f.dividendInflow, expense: f.loanOutflow + f.creditLoanOutflow + f.stockLoanInterest + f.livingExpenses + f.taxWithheld, net: f.netFlow })), [monthlyFlows]);
-  const snowballData = useMemo(() => { const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05; const annualSavings = yearlyNetPosition.toNumber() > 0 ? yearlyNetPosition.toNumber() : 0; const data = []; let currentWealth = totalMarketValue; let currentIncome = fireMetrics.annualPassive; for (let year = 0; year <= 10; year++) { data.push({ year: `Y${year}`, wealth: Math.floor(currentWealth), income: Math.floor(currentIncome) }); currentWealth = currentWealth * 1.05 + (reinvest ? currentIncome : 0) + annualSavings; currentIncome = currentWealth * avgYield; } return data; }, [monthlyFlows, totalMarketValue, yearlyNetPosition, reinvest, fireMetrics]);
-
-  const handleGacha = () => {
-      if (tokens < 1) { alert('代幣不足！'); return; }
-      setTokens(prev => prev - 1);
-      setGachaAnimating(true);
-      setGachaResult(null);
-      setTimeout(() => {
-          const item = GACHA_ITEMS[Math.floor(Math.random() * GACHA_ITEMS.length)];
-          setGachaResult(item);
-          setGachaAnimating(false);
-          setCollection(prev => {
-              const existing = prev.find(i => i.id === item.id);
-              if (existing) return prev.map(i => i.id === item.id ? { ...i, count: i.count + 1 } : i);
-              return [...prev, { id: item.id, count: 1 }];
-          });
-      }, 2000);
-  };
-
-  const rebalanceData = useMemo(() => {
-      const total = allocation.totalFunds;
-      const tDiv = total * (allocation.dividendRatio/100);
-      const tHed = total * (allocation.hedgingRatio/100);
-      const tAct = total * (allocation.activeRatio/100);
-      return [
-          { name: '配息型', actual: actualDividend, target: tDiv, diff: actualDividend - tDiv, color: 'text-emerald-400' },
-          { name: '避險型', actual: actualHedging, target: tHed, diff: actualHedging - tHed, color: 'text-amber-400' },
-          { name: '主動型', actual: actualActive, target: tAct, diff: actualActive - tAct, color: 'text-purple-400' },
-      ];
-  }, [allocation, actualDividend, actualHedging, actualActive]);
-
   useEffect(() => { const calculatedTokens = Math.floor(unrealizedPL / 10000); if (calculatedTokens > tokens) setTokens(calculatedTokens > 0 ? calculatedTokens : 0); }, [unrealizedPL]);
 
   if (isInitializing) return <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400 font-mono">系統啟動中...</p></div>;
@@ -460,7 +468,6 @@ const App: React.FC = () => {
           <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2><div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div><div className={`text-[10px] mt-1 text-right ${remainingFunds >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{remainingFunds >= 0 ? `尚未配置資金: ${formatMoney(remainingFunds)}` : `⚠️ 超出預算: ${formatMoney(Math.abs(remainingFunds))}`}</div></div><div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800"><div><div className="flex justify-between text-xs mb-1"><span className="text-emerald-400 font-bold">配息型</span><div className="flex items-center gap-1"><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-emerald-400 border-b border-emerald-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-amber-400 font-bold">避險型</span><div className="flex items-center gap-1"><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-amber-400 border-b border-amber-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-purple-400 font-bold">主動型</span><div className="flex items-center gap-1"><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-purple-400 border-b border-purple-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive/allocation.totalFunds)*100)}%`}}></div></div></div></div></div></section>
           
           <AssetList etfs={etfs} setEtfs={setEtfs} />
-          
           <FinanceControl loans={loans} stockLoan={stockLoan} globalMarginLoan={globalMarginLoan} creditLoan={creditLoan} taxStatus={taxStatus} updateLoan={updateLoan} setStockLoan={setStockLoan} setGlobalMarginLoan={setGlobalMarginLoan} setCreditLoan={setCreditLoan} setTaxStatus={setTaxStatus} />
         </div>
 
