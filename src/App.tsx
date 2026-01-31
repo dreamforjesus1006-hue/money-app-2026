@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Line, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-// 解決問題 4: 確保所有 icon 都有引入，避免隱性錯誤
-import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, Settings, Cloud, Loader2, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar } from 'lucide-react';
+// 確保所有 icon 都有引入，避免報錯
+import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, Settings, Cloud, Loader2, Zap, TrendingUp, RefreshCw, Gift, PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar } from 'lucide-react';
 
 // ==========================================
-// 解決問題 2: 內建所有 Type 定義，避免 import 遺失
+// 1. 核心定義
 // ==========================================
 
 const BROKERAGE_RATE = 0.001425;
@@ -23,10 +23,10 @@ interface CreditLoan { principal: number; rate: number; totalMonths: number; pai
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { apiKey: string; projectId: string; syncId: string; enabled: boolean; priceSourceUrl?: string; }
-// 補上 AppState
+// 補上 AppState 定義
 interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; collection?: {id:string, count:number}[]; tokens?: number; }
 
-// 預設資料 (防止 undefined)
+// 預設資料
 const INITIAL_ETFS: ETF[] = [
   { id: '1', code: '0056', name: '元大高股息', shares: 0, costPrice: 0, currentPrice: 38.5, dividendPerShare: 2.8, dividendType: 'per_period', payMonths: [1, 4, 7, 10], category: 'dividend', marginLoanAmount: 0 },
 ];
@@ -39,18 +39,13 @@ const INITIAL_ALLOCATION: AllocationConfig = { totalFunds: 0, dividendRatio: 70,
 
 const THEMES = {
     default: { name: '冒險者', color: 'emerald', bg: 'from-emerald-900', border: 'border-emerald-500', text: 'text-emerald-400', icon: <Zap className="w-4 h-4"/> },
-    paladin: { name: '聖騎士', color: 'yellow', bg: 'from-yellow-900', border: 'border-yellow-500', text: 'text-yellow-400', icon: <ShieldCheck className="w-4 h-4"/> }, 
-    berserker: { name: '狂戰士', color: 'red', bg: 'from-red-900', border: 'border-red-500', text: 'text-red-400', icon: <Swords className="w-4 h-4"/> }, 
-    assassin: { name: '刺客', color: 'purple', bg: 'from-purple-900', border: 'border-purple-500', text: 'text-purple-400', icon: <Zap className="w-4 h-4"/> }, 
-    merchant: { name: '大商賈', color: 'blue', bg: 'from-blue-900', border: 'border-blue-500', text: 'text-blue-400', icon: <Coins className="w-4 h-4"/> }, 
 };
 
-// 簡單工具函數 (移除複雜外掛)
+// 簡單工具函數
 const formatMoney = (val: any) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '$0';
   return `$${Math.floor(Number(val)).toLocaleString()}`;
 };
-const safeVal = (v: any): number => Number(v) || 0;
 
 // 計算邏輯
 const calculateLoanPayment = (loan: Loan) => {
@@ -81,19 +76,17 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear * 0.0211, incomeTaxTotal: 0 }; 
 };
 
-// 儲存服務 (使用全新 Key: v23_stable)
-const STORAGE_KEY = 'baozutang_data_v23_stable'; 
-const CLOUD_CONFIG_KEY = 'baozutang_cloud_config';
+const STORAGE_KEY = 'baozutang_data_v24_final'; 
 
 const StorageService = {
     saveData: async (data: any) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
     loadData: async () => { try { const local = localStorage.getItem(STORAGE_KEY); return { data: local ? JSON.parse(local) : null }; } catch (e) { return { data: null }; } },
-    saveCloudConfig: (config: any) => { localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config)); },
-    loadCloudConfig: () => { const c = localStorage.getItem(CLOUD_CONFIG_KEY); return c ? JSON.parse(c) : null; },
+    saveCloudConfig: (config: any) => { },
+    loadCloudConfig: () => { return null; },
     exportToFile: (data: any) => { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `baozutang_backup.json`; a.click(); }
 };
 
-// 子元件：FinanceControl
+// 子元件
 const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, updateLoan, setStockLoan, setGlobalMarginLoan, setCreditLoan, setTaxStatus }: any) => {
   return (
     <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
@@ -105,12 +98,23 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
             <div className="grid grid-cols-2 gap-3"><div><label className="text-[10px] text-slate-500 block">貸款總額</label><input type="number" value={loan.principal} onChange={(e) => updateLoan(idx, 'principal', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div><div><label className="text-[10px] text-emerald-500 block">核貸日期</label><input type="date" value={loan.startDate || ''} onChange={(e) => updateLoan(idx, 'startDate', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white" /></div></div>
           </div>
         ))}
+        <div className="p-2 bg-slate-950 rounded border border-slate-800 border-l-2 border-l-orange-500">
+          <div className="flex justify-between mb-1"><span className="text-xs font-bold text-orange-300">信用貸款</span><input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({ ...creditLoan, rate: Number(e.target.value) })} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs text-right w-16 text-orange-300" placeholder="利率%" /></div>
+          <div className="grid grid-cols-2 gap-2"><div><label className="text-[9px] text-slate-500">本金</label><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({ ...creditLoan, principal: Number(e.target.value) })} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs w-full" /></div><div><label className="text-[9px] text-slate-500">總期數</label><input type="number" value={creditLoan.totalMonths} onChange={(e) => setCreditLoan({ ...creditLoan, totalMonths: Number(e.target.value) })} className="bg-slate-900 border border-slate-700 rounded px-1 text-xs w-full" /></div></div>
+        </div>
+      </div>
+      <div className="pt-2 border-t border-slate-800">
+        <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><Layers className="w-4 h-4" /> 質押與融資</h2>
+        <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+          <div className="p-2 bg-slate-950 rounded border border-slate-800"><label className="text-slate-500 block mb-1">質押 (本金 / 利率%)</label><div className="flex gap-1"><input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({ ...stockLoan, principal: Number(e.target.value) })} className="w-full bg-slate-900 border border-slate-700 rounded px-1" /><input type="number" value={stockLoan.rate} onChange={(e) => setStockLoan({ ...stockLoan, rate: Number(e.target.value) })} className="w-12 bg-slate-900 border border-slate-700 rounded px-1 text-blue-300" /></div></div>
+          <div className="p-2 bg-slate-950 rounded border border-slate-800"><label className="text-slate-500 block mb-1">融資 (本金 / 利率%)</label><div className="flex gap-1"><input type="number" value={globalMarginLoan.principal} onChange={(e) => setGlobalMarginLoan({ ...globalMarginLoan, principal: Number(e.target.value) })} className="w-full bg-slate-900 border border-slate-700 rounded px-1" /><input type="number" value={globalMarginLoan.rate} onChange={(e) => setGlobalMarginLoan({ ...globalMarginLoan, rate: Number(e.target.value) })} className="w-12 bg-slate-900 border border-slate-700 rounded px-1 text-cyan-300" /></div></div>
+        </div>
+        <div className="flex items-center gap-2"><label className="text-xs text-red-400">⚠️ 維持率斷頭線 (%):</label><input type="number" value={stockLoan.maintenanceLimit || 130} onChange={(e) => setStockLoan({ ...stockLoan, maintenanceLimit: Number(e.target.value) })} className="w-16 bg-slate-950 border border-red-900/50 rounded px-1 text-xs text-red-300" /></div>
       </div>
     </section>
   );
 };
 
-// 子元件：AssetList
 const AssetList = ({ etfs, setEtfs }: any) => {
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [buyForm, setBuyForm] = useState<{shares: string, price: string, date: string, margin: string}>({ shares: '', price: '', date: '', margin: '' });
@@ -141,13 +145,12 @@ const AssetList = ({ etfs, setEtfs }: any) => {
   );
 };
 
-// 子元件：GameHUD
 const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalMarketValue, totalDebt, collection, currentClass }: any) => {
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
         <div className={`md:col-span-4 bg-slate-900/80 p-6 rounded-2xl border ${currentClass.border} relative overflow-hidden`}>
             <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1 flex items-center gap-2"><Crown className="w-3 h-3 text-yellow-500" /> 玩家等級</div>
-            <div className={`text-3xl font-black ${levelInfo.color} mb-1`}>{levelInfo.title}</div>
+            <div className={`text-3xl font-black text-emerald-400 mb-1`}>{levelInfo.title}</div>
             <div className="grid grid-cols-2 gap-4 mt-4">
                 <div><div className="text-slate-500 text-[10px] uppercase">戰鬥力 (CP)</div><div className="text-2xl font-mono text-white font-bold">{formatMoney(combatPower)}</div></div>
                 <div><div className="text-slate-500 text-[10px] uppercase">HP (維持率)</div><div className="text-2xl font-mono text-emerald-400 font-bold">{currentMaintenance === 999 ? 'MAX' : currentMaintenance.toFixed(0) + '%'}</div></div>
@@ -157,7 +160,7 @@ const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalM
   );
 };
 
-// --- 主程式 (App) ---
+// --- App 主程式 ---
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving'>('idle');
@@ -179,8 +182,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const initData = async () => {
       try {
-        const savedConfig = StorageService.loadCloudConfig();
-        if (savedConfig) setCloudConfig(prev => ({ ...prev, ...savedConfig }));
         const result = await StorageService.loadData();
         if (result.data) {
           const { etfs, loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, allocation, collection: c, tokens: t } = result.data as any;
@@ -231,7 +232,7 @@ const App: React.FC = () => {
   return (
     <div className={`min-h-screen p-4 md:p-8 font-sans bg-slate-950 text-white`}>
       <header className="mb-8 border-b border-slate-800 pb-4">
-        <h1 className="text-3xl font-bold flex items-center gap-2"><Zap className="text-emerald-400"/> 包租唐戰情室 <span className="text-xs bg-emerald-900 px-2 rounded">V23 Stable</span></h1>
+        <h1 className="text-3xl font-bold flex items-center gap-2"><Zap className="text-emerald-400"/> 包租唐戰情室 <span className="text-xs bg-emerald-900 px-2 rounded">V24 Final</span></h1>
       </header>
 
       <GameHUD combatPower={combatPower} levelInfo={levelInfo} fireRatio={fireMetrics.ratio} currentMaintenance={currentMaintenance} totalMarketValue={totalMarketValue} totalDebt={totalStockDebt+totalRealDebt} skills={[]} annualPassiveIncome={fireMetrics.annualPassive} hasHedging={false} hasLeverage={false} netWorthPositive={true} collection={collection} currentClass={currentClass} />
