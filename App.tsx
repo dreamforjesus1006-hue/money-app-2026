@@ -1,23 +1,20 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, AreaChart, Area } from 'recharts';
-// 👇 關鍵修正：這裡補齊了所有圖示，包含 Crown, Trophy, Calendar
+// 👇 關鍵：這裡確認有 Crown, Trophy, Calendar
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar } from 'lucide-react';
 
 // ==========================================
-// 1. 核心定義 (完全獨立，不依賴外部檔案)
+// 1. 核心定義 (God Mode)
 // ==========================================
 
 const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#8b5cf6', cash: '#334155' };
-const QUOTES = ["「別人恐懼我貪婪。」— 巴菲特", "「長期而言，股市是稱重機。」", "「不要虧損。」", "「複利是世界第八大奇蹟。」"];
 
-// 為了防止 TypeScript 報錯，這裡手動定義 MortgageType
 const MortgageType = {
   PrincipalAndInterest: 'PrincipalAndInterest',
   Principal: 'Principal'
 };
 
-// --- 介面定義 (包含 AppState) ---
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
 interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
 interface Loan { id: string; name: string; principal: number; rate1: number; rate1Months: number; rate2: number; totalMonths: number; paidMonths: number; gracePeriod: number; startDate?: string; type: string; }
@@ -26,10 +23,8 @@ interface CreditLoan { principal: number; rate: number; totalMonths: number; pai
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { apiKey: string; projectId: string; syncId: string; enabled: boolean; priceSourceUrl?: string; }
-// 👇 這裡補上了 AppState 的定義
 interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; collection?: {id:string, count:number}[]; tokens?: number; }
 
-// --- 預設資料 ---
 const INITIAL_ETFS: ETF[] = [
   { id: '1', code: '0056', name: '元大高股息', shares: 0, costPrice: 0, currentPrice: 38.5, dividendPerShare: 2.8, dividendType: 'per_period', payMonths: [1, 4, 7, 10], category: 'dividend', marginLoanAmount: 0 },
   { id: '2', code: '00919', name: '群益精選高息', shares: 0, costPrice: 0, currentPrice: 26.2, dividendPerShare: 2.4, dividendType: 'per_period', payMonths: [3, 6, 9, 12], category: 'dividend', marginLoanAmount: 0 },
@@ -49,27 +44,17 @@ const THEMES = {
     merchant: { name: '大商賈', color: 'blue', bg: 'from-blue-900', border: 'border-blue-500', text: 'text-blue-400', icon: <Coins className="w-4 h-4"/> }, 
 };
 
-// ==========================================
-// 2. 工具函數
-// ==========================================
-
+// 工具函數
 const formatMoney = (val: any) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '$0';
   return `$${Math.floor(Number(val)).toLocaleString()}`;
 };
 
-const safeVal = (v: any): number => {
-  return Number(v) || 0;
-};
+const safeVal = (v: any): number => Number(v) || 0;
 
-// ==========================================
-// 3. 內建計算邏輯
-// ==========================================
-
+// 計算邏輯
 const calculateLoanPayment = (loan: Loan) => {
-    if (loan.paidMonths < loan.gracePeriod) {
-        return Math.floor(loan.principal * (loan.rate1 / 100 / 12));
-    }
+    if (loan.paidMonths < loan.gracePeriod) return Math.floor(loan.principal * (loan.rate1 / 100 / 12));
     const rate = (loan.paidMonths < loan.rate1Months ? loan.rate1 : loan.rate2) / 100 / 12;
     const remainingMonths = loan.totalMonths - loan.paidMonths;
     if (remainingMonths <= 0) return 0;
@@ -79,75 +64,35 @@ const calculateLoanPayment = (loan: Loan) => {
 const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, creditLoan: CreditLoan, globalMarginLoan: StockLoan, taxStatus: TaxStatus) => {
     const monthlyFlows = [];
     let totalDividendYear = 0;
-    
     for (let m = 1; m <= 12; m++) {
         let dividendInflow = 0;
-        (etfs || []).forEach(etf => {
-            if (etf.payMonths?.includes(m)) {
-                dividendInflow += (etf.shares * etf.dividendPerShare);
-            }
-        });
-        
+        (etfs || []).forEach(etf => { if (etf.payMonths?.includes(m)) dividendInflow += (etf.shares * etf.dividendPerShare); });
         let loanOutflow = 0;
         (loans || []).forEach(l => loanOutflow += calculateLoanPayment(l));
-        
         const creditRate = creditLoan.rate / 100 / 12;
         const creditOutflow = creditLoan.principal > 0 ? Math.floor((creditLoan.principal * creditRate * Math.pow(1 + creditRate, creditLoan.totalMonths)) / (Math.pow(1 + creditRate, creditLoan.totalMonths) - 1)) : 0;
-        
         const stockInterest = Math.floor((stockLoan.principal * (stockLoan.rate/100)/12) + (globalMarginLoan.principal * (globalMarginLoan.rate/100)/12));
         const marginInterest = (etfs || []).reduce((acc, e) => acc + ((e.marginLoanAmount||0) * ((e.marginInterestRate||6.5)/100)/12), 0);
-
         const taxWithheld = Math.floor(dividendInflow * 0.0211);
-        
         totalDividendYear += dividendInflow;
-
-        monthlyFlows.push({
-            month: m,
-            dividendInflow: dividendInflow,
-            loanOutflow,
-            creditLoanOutflow: creditOutflow,
-            stockLoanInterest: stockInterest + marginInterest,
-            livingExpenses: taxStatus.livingExpenses,
-            taxWithheld,
-            netFlow: dividendInflow - loanOutflow - creditOutflow - (stockInterest + marginInterest) - taxStatus.livingExpenses - taxWithheld
-        });
+        monthlyFlows.push({ month: m, dividendInflow, loanOutflow, creditLoanOutflow: creditOutflow, stockLoanInterest: stockInterest + marginInterest, livingExpenses: taxStatus.livingExpenses, taxWithheld, netFlow: dividendInflow - loanOutflow - creditOutflow - (stockInterest + marginInterest) - taxStatus.livingExpenses - taxWithheld });
     }
-    
     const yearlyNetPosition = monthlyFlows.reduce((acc, cur) => acc + cur.netFlow, 0);
-    return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear * 0.0211, incomeTaxTotal: 0 };
+    return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear * 0.0211, incomeTaxTotal: 0 }; 
 };
 
-// ==========================================
-// 4. 儲存服務 (使用全新 Key: v18_final)
-// ==========================================
-const STORAGE_KEY = 'baozutang_data_v18_final'; 
+const STORAGE_KEY = 'baozutang_data_v19_final';
 const CLOUD_CONFIG_KEY = 'baozutang_cloud_config';
 
 const StorageService = {
-    saveData: async (data: any) => {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; }
-    },
-    loadData: async () => {
-        try { const local = localStorage.getItem(STORAGE_KEY); return { data: local ? JSON.parse(local) : null }; } catch (e) { return { data: null }; }
-    },
-    saveCloudConfig: (config: any) => {
-        localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
-    },
-    loadCloudConfig: () => {
-        const c = localStorage.getItem(CLOUD_CONFIG_KEY);
-        return c ? JSON.parse(c) : null;
-    },
-    exportToFile: (data: any) => {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `baozutang_backup.json`; a.click();
-    }
+    saveData: async (data: any) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
+    loadData: async () => { try { const local = localStorage.getItem(STORAGE_KEY); return { data: local ? JSON.parse(local) : null }; } catch (e) { return { data: null }; } },
+    saveCloudConfig: (config: any) => { localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config)); },
+    loadCloudConfig: () => { const c = localStorage.getItem(CLOUD_CONFIG_KEY); return c ? JSON.parse(c) : null; },
+    exportToFile: (data: any) => { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `baozutang_backup.json`; a.click(); }
 };
 
-// ==========================================
-// 5. 內建子元件
-// ==========================================
-
+// 子元件
 const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, updateLoan, setStockLoan, setGlobalMarginLoan, setCreditLoan, setTaxStatus }: any) => {
   return (
     <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg space-y-4">
@@ -155,24 +100,9 @@ const FinanceControl = ({ loans, stockLoan, globalMarginLoan, creditLoan, taxSta
         <h2 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-1"><DollarSign className="w-4 h-4" /> 房貸與信貸</h2>
         {(loans || []).map((loan: any, idx: number) => (
           <div key={loan.id || idx} className="mb-4 p-3 bg-slate-950 rounded border border-slate-800">
-            <div className="flex justify-between mb-2 items-center">
-              <input type="text" value={loan.name} onChange={(e) => updateLoan(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 w-1/2 text-sm" />
-              <select value={loan.type} onChange={(e) => updateLoan(idx, 'type', e.target.value)} className="bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400">
-                <option value={MortgageType.PrincipalAndInterest}>本息攤還</option>
-                <option value={MortgageType.Principal}>本金攤還</option>
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[10px] text-slate-500 block">貸款總額</label><input type="number" value={loan.principal} onChange={(e) => updateLoan(idx, 'principal', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div>
-              <div><label className="text-[10px] text-emerald-500 block">核貸日期</label><input type="date" value={loan.startDate || ''} onChange={(e) => updateLoan(idx, 'startDate', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white" /></div>
-              <div><label className="text-[10px] text-slate-500 block">總期數(月)</label><input type="number" value={loan.totalMonths} onChange={(e) => updateLoan(idx, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div>
-              <div><label className="text-[10px] text-slate-500 block">寬限期(月)</label><input type="number" value={loan.gracePeriod} onChange={(e) => updateLoan(idx, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div>
-            </div>
-            <div className="mt-2 grid grid-cols-3 gap-2 p-2 bg-slate-900/50 rounded border border-slate-800">
-              <div><label className="text-[9px] text-blue-400 block">一段利率 %</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
-              <div><label className="text-[9px] text-blue-400 block">一段月數</label><input type="number" value={loan.rate1Months} onChange={(e) => updateLoan(idx, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
-              <div><label className="text-[9px] text-blue-400 block">二段利率 %</label><input type="number" value={loan.rate2} onChange={(e) => updateLoan(idx, 'rate2', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div>
-            </div>
+            <div className="flex justify-between mb-2 items-center"><input type="text" value={loan.name} onChange={(e) => updateLoan(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-600 w-1/2 text-sm" /><select value={loan.type} onChange={(e) => updateLoan(idx, 'type', e.target.value)} className="bg-slate-900 text-[10px] border border-slate-700 rounded px-1 text-slate-400"><option value="PrincipalAndInterest">本息攤還</option><option value="Principal">本金攤還</option></select></div>
+            <div className="grid grid-cols-2 gap-3"><div><label className="text-[10px] text-slate-500 block">貸款總額</label><input type="number" value={loan.principal} onChange={(e) => updateLoan(idx, 'principal', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div><div><label className="text-[10px] text-emerald-500 block">核貸日期</label><input type="date" value={loan.startDate || ''} onChange={(e) => updateLoan(idx, 'startDate', e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white" /></div><div><label className="text-[10px] text-slate-500 block">總期數(月)</label><input type="number" value={loan.totalMonths} onChange={(e) => updateLoan(idx, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div><div><label className="text-[10px] text-slate-500 block">寬限期(月)</label><input type="number" value={loan.gracePeriod} onChange={(e) => updateLoan(idx, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs" /></div></div>
+            <div className="mt-2 grid grid-cols-3 gap-2 p-2 bg-slate-900/50 rounded border border-slate-800"><div><label className="text-[9px] text-blue-400 block">一段利率 %</label><input type="number" value={loan.rate1} onChange={(e) => updateLoan(idx, 'rate1', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div><div><label className="text-[9px] text-blue-400 block">一段月數</label><input type="number" value={loan.rate1Months} onChange={(e) => updateLoan(idx, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div><div><label className="text-[9px] text-blue-400 block">二段利率 %</label><input type="number" value={loan.rate2} onChange={(e) => updateLoan(idx, 'rate2', Number(e.target.value))} className="w-full bg-slate-900 border border-slate-700 rounded px-1 text-xs" /></div></div>
             <div className="mt-2 text-[10px] text-slate-600 text-right">已繳期數: {loan.paidMonths} 期</div>
           </div>
         ))}
@@ -280,19 +210,7 @@ const AssetList = ({ etfs, setEtfs }: any) => {
   );
 };
 
-// --- 7. 內建子元件 (GameHUD) ---
 const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalMarketValue, totalDebt, skills, annualPassiveIncome, hasHedging, hasLeverage, netWorthPositive, collection, currentClass }: any) => {
-  const achievements = [
-      { id: '1', name: '初心冒險者', icon: <Swords className="w-5 h-5"/>, desc: '開始投資旅程', unlocked: totalMarketValue > 0, color: 'text-slate-200 border-slate-500 shadow-slate-500/20' },
-      { id: '2', name: '第一桶金', icon: <Coins className="w-5 h-5"/>, desc: '總資產 > 100萬', unlocked: totalMarketValue >= 1000000, color: 'text-emerald-400 border-emerald-500 shadow-emerald-500/20' },
-      { id: '3', name: '千萬富翁', icon: <Gem className="w-5 h-5"/>, desc: '總資產 > 1000萬', unlocked: totalMarketValue >= 10000000, color: 'text-purple-400 border-purple-500 shadow-purple-500/20' },
-      { id: '4', name: '煉金術士', icon: <Sparkles className="w-5 h-5"/>, desc: '持有黃金等避險資產', unlocked: hasHedging, color: 'text-yellow-400 border-yellow-500 shadow-yellow-500/20' },
-      { id: '5', name: '現金流大師', icon: <RefreshCw className="w-5 h-5"/>, desc: '年股息超過 50 萬', unlocked: annualPassiveIncome >= 500000, color: 'text-blue-400 border-blue-500 shadow-blue-500/20' },
-      { id: '6', name: '槓桿戰士', icon: <Zap className="w-5 h-5"/>, desc: '使用融資或質押', unlocked: hasLeverage, color: 'text-red-400 border-red-500 shadow-red-500/20' },
-      { id: '7', name: '財富國王', icon: <Crown className="w-5 h-5"/>, desc: 'FIRE 自由度達 100%', unlocked: fireRatio >= 100, color: 'text-yellow-500 border-yellow-500 shadow-yellow-500/40' },
-      { id: '8', name: '債務殺手', icon: <Skull className="w-5 h-5"/>, desc: '資產大於總負債', unlocked: netWorthPositive, color: 'text-orange-500 border-orange-500 shadow-orange-500/20' },
-  ];
-
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
@@ -326,23 +244,11 @@ const GameHUD = ({ combatPower, levelInfo, fireRatio, currentMaintenance, totalM
             ) : <div className="flex-1 flex items-center justify-center text-slate-600 text-xs italic">尚無寶物</div>}
         </div>
       </div>
-      <div className="mt-8 bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl overflow-hidden flex flex-col">
-          <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-500" /> 成就殿堂 (Hall of Fame)</div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {achievements.map(ach => (
-                  <div key={ach.id} className={`relative p-3 rounded-xl border flex items-center gap-3 transition-all duration-500 group ${ach.unlocked ? `bg-slate-950/80 ${ach.color} shadow-lg` : 'bg-slate-950/30 border-slate-800 opacity-60 grayscale'}`}>
-                      <div className={`p-2 rounded-full shadow-lg ${ach.unlocked ? 'bg-slate-900 text-white shadow-current/20' : 'bg-slate-800 text-slate-600'}`}>{ach.unlocked ? ach.icon : <Lock className="w-5 h-5" />}</div>
-                      <div className="flex-1 min-w-0"><div className={`text-xs font-bold truncate ${ach.unlocked ? 'text-white' : 'text-slate-500'}`}>{ach.name}</div><div className="text-[10px] text-slate-400 truncate">{ach.desc}</div></div>
-                      {ach.unlocked && <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />}
-                  </div>
-              ))}
-          </div>
-      </div>
     </>
   );
 };
 
-// --- 8. 主程式 (App) - 總指揮官 ---
+// --- App 主程式 ---
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -381,13 +287,10 @@ const App: React.FC = () => {
           const { etfs, loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, allocation, collection: c, tokens: t } = result.data as any;
           setEtfs(Array.isArray(etfs) ? etfs.map((e: any) => ({ ...e, category: e.category || 'dividend', code: e.code || e.id })) : INITIAL_ETFS);
           setLoans(Array.isArray(loans) ? loans : INITIAL_LOANS);
-          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); 
-          setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
-          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); 
-          setTaxStatus(taxStatus ? { ...INITIAL_TAX_STATUS, ...taxStatus } : INITIAL_TAX_STATUS);
+          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
+          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); setTaxStatus(taxStatus || INITIAL_TAX_STATUS);
           setAllocation(allocation || INITIAL_ALLOCATION);
-          setCollection(Array.isArray(c) ? c : []); 
-          setTokens(typeof t === 'number' ? t : 0);
+          setCollection(c || []); setTokens(t || 0);
         }
       } catch (error) { console.error("Init failed", error); } finally { setIsInitializing(false); }
     };
@@ -475,19 +378,7 @@ const App: React.FC = () => {
   const handleExport = () => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation });
   const openLootBox = () => { setLootQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]); setShowLoot(true); };
   const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
-  const handleGacha = () => { 
-      const GACHA_ITEMS_LOCAL = [
-        { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓', desc: '看透市場本質' },
-        { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️', desc: '多元思維模型' },
-        { id: 'g3', name: '科斯托蘭尼之狗', rarity: 'R', icon: '🐕', desc: '主人與狗的牽絆' },
-        { id: 'g4', name: '約翰伯格的方舟', rarity: 'UR', icon: '⛵', desc: '指數投資終極載具' },
-        { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮', desc: '反身性理論' },
-        { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷', desc: '積少成多' },
-      ];
-      if (tokens < 1) { alert('代幣不足！'); return; } 
-      setTokens(prev => prev - 1); setGachaAnimating(true); setGachaResult(null); 
-      setTimeout(() => { const item = GACHA_ITEMS_LOCAL[Math.floor(Math.random() * GACHA_ITEMS_LOCAL.length)]; setGachaResult(item); setGachaAnimating(false); setCollection(prev => { const existing = prev.find(i => i.id === item.id); if (existing) return prev.map(i => i.id === item.id ? { ...i, count: i.count + 1 } : i); return [...prev, { id: item.id, count: 1 }]; }); }, 2000); 
-  };
+  const handleGacha = () => { if (tokens < 1) { alert('代幣不足！'); return; } setTokens(prev => prev - 1); setGachaAnimating(true); setGachaResult(null); setTimeout(() => { const item = GACHA_ITEMS[Math.floor(Math.random() * GACHA_ITEMS.length)]; setGachaResult(item); setGachaAnimating(false); setCollection(prev => { const existing = prev.find(i => i.id === item.id); if (existing) return prev.map(i => i.id === item.id ? { ...i, count: i.count + 1 } : i); return [...prev, { id: item.id, count: 1 }]; }); }, 2000); };
   
   const rebalanceData = useMemo(() => {
       const total = allocation.totalFunds;
@@ -575,7 +466,7 @@ const App: React.FC = () => {
 
         {/* 右側: 圓餅圖與統計 */}
         <div className="xl:col-span-8 space-y-6">
-          <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2><div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div><div className={`text-[10px] mt-1 text-right ${remainingFunds >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{remainingFunds >= 0 ? `尚未配置資金: ${formatMoney(remainingFunds)}` : `⚠️ 超出預算: ${formatMoney(Math.abs(remainingFunds))}`}</div></div><div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800"><div><div className="flex justify-between text-xs mb-1"><span className="text-emerald-400 font-bold">配息型</span><div className="flex items-center gap-1"><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-emerald-400 border-b border-emerald-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-amber-400 font-bold">避險型</span><div className="flex items-center gap-1"><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-amber-400 border-b border-amber-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-purple-400 font-bold">主動型</span><div className="flex items-center gap-1"><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-purple-400 border-b border-purple-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive/allocation.totalFunds)*100)}%`}}></div></div></div></div></div></section>
+          <section className="bg-slate-900 rounded-2xl p-5 border border-slate-800 shadow-lg relative overflow-hidden"><h2 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><PieIcon className="w-5 h-5 text-blue-400" /> 資源配置</h2><div className="mb-4"><label className="text-xs text-slate-400 block mb-1">總資金 (Total Cap)</label><div className="relative"><DollarSign className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" /><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="0"/></div><div className={`text-[10px] mt-1 text-right ${remainingFunds >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{remainingFunds >= 0 ? `尚未配置資金: ${formatMoney(remainingFunds)}` : `⚠️ 超出預算: ${formatMoney(Math.abs(remainingFunds))}`}</div></div><div className="grid grid-cols-1 gap-4"><div className="h-40 flex justify-center items-center bg-slate-950/50 rounded-xl"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} stroke="none" />))}</Pie><Tooltip formatter={(value: number) => formatMoney(value)} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', fontSize: '12px' }}/></PieChart></ResponsiveContainer></div><div className="space-y-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800"><div><div className="flex justify-between text-xs mb-1"><span className="text-emerald-400 font-bold">配息型</span><div className="flex items-center gap-1"><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-emerald-400 border-b border-emerald-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-amber-400 font-bold">避險型</span><div className="flex items-center gap-1"><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-amber-400 border-b border-amber-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging/allocation.totalFunds)*100)}%`}}></div></div></div><div><div className="flex justify-between text-xs mb-1"><span className="text-purple-400 font-bold">主動型</span><div className="flex items-center gap-1"><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none text-purple-400 border-b border-purple-900" /><span className="text-slate-500">%</span></div></div><div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive/allocation.totalFunds)*100)}%`}}></div></div></div></div></div></section>
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 relative overflow-hidden"><div className="absolute right-0 top-0 p-3 opacity-10"><DollarSign className="w-12 h-12"/></div><div className="text-slate-500 text-xs uppercase tracking-wider">年度淨現金流</div><div className={`text-2xl font-black ${safeVal(yearlyNetPosition) < 0 ? 'text-red-400' : 'text-emerald-400'}`}>{formatMoney(safeVal(yearlyNetPosition))}</div></div>
