@@ -145,7 +145,7 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 };
 
 // 儲存服務
-const STORAGE_KEY = 'baozutang_data_v36_fixed'; 
+const STORAGE_KEY = 'baozutang_data_v37_final'; 
 const CONFIG_KEY = 'baozutang_config';
 
 const StorageService = {
@@ -163,7 +163,7 @@ const StorageService = {
 };
 
 // ==========================================
-// 4. 主程式 (App) - 確保所有邏輯都在 App 內部
+// 4. 主程式 (App) - 包含所有 UI 與邏輯
 // ==========================================
 
 const App: React.FC = () => {
@@ -249,7 +249,6 @@ const App: React.FC = () => {
 
   const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   
-  // 計算順序：1. CashFlow -> 2. FireMetrics -> 3. RadarData
   const fireMetrics = useMemo(() => { const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); const inc = monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0); return { ratio: exp>0?(inc/exp)*100:0, annualPassive: inc, annualExpenses: exp }; }, [monthlyFlows]);
   const combatPower = useMemo(() => Math.floor((totalMarketValue/10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
   const levelInfo = useMemo(() => { const r = fireMetrics.ratio; if(r>=100) return {title:'財富國王 👑', color:'text-yellow-400'}; if(r>=50) return {title:'資產領主 ⚔️', color:'text-purple-400'}; if(r>=20) return {title:'理財騎士 🛡️', color:'text-blue-400'}; return {title:'初心冒險者 🪵', color:'text-slate-400'}; }, [fireMetrics]);
@@ -266,9 +265,15 @@ const App: React.FC = () => {
       ];
   }, [fireMetrics, totalMarketValue, etfs, currentMaintenance]);
 
+  // Allocation Logic (Includes Target Calculations)
   const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
+  
+  const targetDividend = Math.floor(allocation.totalFunds * (allocation.dividendRatio / 100));
+  const targetHedging = Math.floor(allocation.totalFunds * (allocation.hedgingRatio / 100));
+  const targetActive = Math.floor(allocation.totalFunds * (allocation.activeRatio / 100));
+
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
   const isAllocationValid = (allocation.dividendRatio + allocation.hedgingRatio + allocation.activeRatio) === 100;
 
@@ -405,7 +410,7 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V36 Complete</span></h1>
+           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V37 Complete</span></h1>
            <div className="flex items-center gap-4 mt-2"><div className="flex gap-2"><div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">{saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}{saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}</div></div></div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -445,7 +450,7 @@ const App: React.FC = () => {
              </div>
             </section>
 
-            {/* Allocation */}
+            {/* Allocation (Updated with Gap Info) */}
             <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-emerald-500 to-purple-500"></div>
                 <h2 className="text-xl font-semibold mb-4 text-blue-300 flex items-center gap-2"><PieIcon className="w-5 h-5" /> 資金分配規劃</h2>
@@ -463,15 +468,18 @@ const App: React.FC = () => {
                 <div className="space-y-3 bg-slate-900/50 rounded-xl p-3 border border-slate-700/50">
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-emerald-300 font-bold">配息型</span><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-emerald-500 outline-none" /></div>
-                        <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend / allocation.totalFunds) * 100)}%`}}></div></div>
+                        <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-emerald-900/50" style={{width: `${allocation.dividendRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-emerald-500" style={{width: `${Math.min(100, (actualDividend / allocation.totalFunds) * 100)}%`}}></div></div>
+                        <div className="flex justify-between text-[10px]"><span className="text-slate-400">實: {formatMoney(actualDividend)}</span><span className={`font-mono ${actualDividend < targetDividend ? 'text-red-400' : 'text-emerald-400'}`}>{actualDividend < targetDividend ? `缺 ${formatMoney(targetDividend - actualDividend)}` : '已達標'}</span></div>
                     </div>
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-amber-300 font-bold">避險型</span><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-amber-500 outline-none" /></div>
-                        <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging / allocation.totalFunds) * 100)}%`}}></div></div>
+                        <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-amber-900/50" style={{width: `${allocation.hedgingRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-amber-500" style={{width: `${Math.min(100, (actualHedging / allocation.totalFunds) * 100)}%`}}></div></div>
+                        <div className="flex justify-between text-[10px]"><span className="text-slate-400">實: {formatMoney(actualHedging)}</span><span className={`font-mono ${actualHedging < targetHedging ? 'text-red-400' : 'text-emerald-400'}`}>{actualHedging < targetHedging ? `缺 ${formatMoney(targetHedging - actualHedging)}` : '已達標'}</span></div>
                     </div>
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-purple-300 font-bold">主動型</span><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-purple-500 outline-none" /></div>
-                        <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive / allocation.totalFunds) * 100)}%`}}></div></div>
+                        <div className="relative h-2 w-full bg-slate-700 rounded-full overflow-hidden mb-1"><div className="absolute top-0 left-0 h-full bg-purple-900/50" style={{width: `${allocation.activeRatio}%`}}></div><div className="absolute top-0 left-0 h-full bg-purple-500" style={{width: `${Math.min(100, (actualActive / allocation.totalFunds) * 100)}%`}}></div></div>
+                        <div className="flex justify-between text-[10px]"><span className="text-slate-400">實: {formatMoney(actualActive)}</span><span className={`font-mono ${actualActive < targetActive ? 'text-red-400' : 'text-emerald-400'}`}>{actualActive < targetActive ? `缺 ${formatMoney(targetActive - actualActive)}` : '已達標'}</span></div>
                     </div>
                     {!isAllocationValid && <div className="text-center text-xs text-red-400 mt-2">⚠️ 比例總和非 100%</div>}
                 </div>
