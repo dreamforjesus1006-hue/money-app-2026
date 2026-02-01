@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar, Lightbulb, CheckCircle2, HelpCircle, Edit3, ArrowRightLeft, Plus } from 'lucide-react';
 
 // ==========================================
-// 1. 您的專屬備份資料
+// 1. 您的專屬備份資料 (Source of Truth)
 // ==========================================
 const USER_BACKUP_DATA = {
   "etfs": [
@@ -70,7 +70,7 @@ const USER_BACKUP_DATA = {
 };
 
 // ==========================================
-// 2. 核心定義
+// 2. 核心定義 (Config & Types)
 // ==========================================
 
 const BROKERAGE_RATE = 0.001425;
@@ -108,7 +108,7 @@ const INITIAL_TAX_STATUS = USER_BACKUP_DATA.taxStatus;
 const INITIAL_ALLOCATION = USER_BACKUP_DATA.allocation;
 
 // ==========================================
-// 3. 工具與計算
+// 3. 工具與計算函數
 // ==========================================
 
 const formatMoney = (val: any) => {
@@ -144,7 +144,8 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear * 0.0211, incomeTaxTotal: 0 }; 
 };
 
-const STORAGE_KEY = 'baozutang_data_v34_monolith'; 
+// 儲存服務
+const STORAGE_KEY = 'baozutang_data_v34_final'; 
 const StorageService = {
     saveData: async (data: any) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
     loadData: async () => { 
@@ -158,7 +159,7 @@ const StorageService = {
 };
 
 // ==========================================
-// 4. 主程式 (App) - 包含所有 UI 與邏輯
+// 4. 主程式 (App) - 包含完整功能與資料
 // ==========================================
 
 const App: React.FC = () => {
@@ -235,13 +236,11 @@ const App: React.FC = () => {
   const unrealizedPL = totalMarketValue - etfs.reduce((acc, e) => acc + (e.shares * e.costPrice), 0);
 
   const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
-  
-  // 順序修正：先定義 fireMetrics
   const fireMetrics = useMemo(() => { const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); const inc = monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0); return { ratio: exp>0?(inc/exp)*100:0, annualPassive: inc, annualExpenses: exp }; }, [monthlyFlows]);
   const combatPower = useMemo(() => Math.floor((totalMarketValue/10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
   const levelInfo = useMemo(() => { const r = fireMetrics.ratio; if(r>=100) return {title:'財富國王 👑', color:'text-yellow-400'}; if(r>=50) return {title:'資產領主 ⚔️', color:'text-purple-400'}; if(r>=20) return {title:'理財騎士 🛡️', color:'text-blue-400'}; return {title:'初心冒險者 🪵', color:'text-slate-400'}; }, [fireMetrics]);
   
-  // 再定義 radarData
+  // Radar Data
   const radarData = useMemo(() => {
       const actualHedging = etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0);
       const actualActive = etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0);
@@ -254,12 +253,14 @@ const App: React.FC = () => {
       ];
   }, [fireMetrics, totalMarketValue, etfs, currentMaintenance]);
 
+  // Allocation Logic
   const actualDividend = useMemo(() => etfs.filter(e => e.category === 'dividend').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualHedging = useMemo(() => etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const actualActive = useMemo(() => etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0), [etfs]);
   const pieData = [{ name: '配息型', value: actualDividend, color: COLORS.dividend }, { name: '避險型', value: actualHedging, color: COLORS.hedging }, { name: '主動型', value: actualActive, color: COLORS.active }].filter(d => d.value > 0);
   const isAllocationValid = (allocation.dividendRatio + allocation.hedgingRatio + allocation.activeRatio) === 100;
 
+  // Breakeven Tip
   const breakevenTip = useMemo(() => {
      if (yearlyNetPosition >= 0) return null;
      const deficit = Math.abs(yearlyNetPosition);
@@ -267,6 +268,7 @@ const App: React.FC = () => {
      return { deficit, avgYield: avgYield*100, neededCapital: deficit / avgYield };
   }, [yearlyNetPosition]);
 
+  // Snowball Data
   const snowballData = useMemo(() => { 
       const avgYield = totalMarketValue > 0 ? fireMetrics.annualPassive / totalMarketValue : 0.05; 
       const annualSavings = Number(yearlyNetPosition) || 0; 
@@ -281,12 +283,13 @@ const App: React.FC = () => {
       return data; 
   }, [monthlyFlows, totalMarketValue, yearlyNetPosition, fireMetrics, reinvest]);
 
-  // Handlers (Defined Inside App)
+  // Handlers
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
   const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
   const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
   const toggleEtfDividendType = (index: number) => { const newEtfs = [...etfs]; newEtfs[index].dividendType = newEtfs[index].dividendType === 'annual' ? 'per_period' : 'annual'; setEtfs(newEtfs); };
   const toggleEtfPayMonth = (index: number, month: number) => { const etf = etfs[index]; const ms = etf.payMonths?.includes(month) ? etf.payMonths.filter(m => m !== month) : [...(etf.payMonths || []), month].sort((a, b) => a - b); updateEtf(index, 'payMonths', ms); };
+  
   const updateLoan = (i: number, f: keyof Loan, v: any) => { const n = [...loans]; if (f === 'startDate' && v) { const s = new Date(v), now = new Date(); let m = (now.getFullYear() - s.getFullYear()) * 12 - s.getMonth() + now.getMonth(); n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, m) }; } else { n[i] = { ...n[i], [f]: v }; } setLoans(n); };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const f=e.target.files?.[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{ try{ const s=JSON.parse(ev.target?.result as string) as AppState; if(s.etfs){ setEtfs(s.etfs); setLoans(s.loans||[]); setStockLoan(s.stockLoan||INITIAL_STOCK_LOAN); setGlobalMarginLoan(s.globalMarginLoan||INITIAL_GLOBAL_MARGIN_LOAN); setCreditLoan(s.creditLoan||INITIAL_CREDIT_LOAN); setTaxStatus(s.taxStatus||INITIAL_TAX_STATUS); setAllocation(s.allocation||INITIAL_ALLOCATION); alert('成功'); } }catch{alert('錯誤');}}; r.readAsText(f); e.target.value=''; };
@@ -349,7 +352,7 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V34 Monolith</span></h1>
+           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V34 Ultimate</span></h1>
            <div className="flex items-center gap-4 mt-2"><div className="flex gap-2"><div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">{saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}{saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}</div></div></div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -400,7 +403,6 @@ const App: React.FC = () => {
                        </PieChart>
                      </ResponsiveContainer>
                 </div>
-                {/* Allocation Inputs */}
                 <div className="space-y-3 bg-slate-900/50 rounded-xl p-3 border border-slate-700/50">
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-emerald-300 font-bold">配息型</span><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-emerald-500 outline-none" /></div>
@@ -554,6 +556,42 @@ const App: React.FC = () => {
                     </div>
                 </div>
              )}
+
+             {/* Monthly Cash Flow Table */}
+            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg overflow-x-auto">
+              <h3 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><Calendar className="w-5 h-5 text-blue-400"/> 每月現金流明細</h3>
+              <table className="w-full text-sm text-left text-slate-300">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-900/50">
+                  <tr>
+                    <th className="px-4 py-3 rounded-l-lg">月份</th>
+                    <th className="px-4 py-3 text-emerald-400">股息收入</th>
+                    <th className="px-4 py-3 text-red-400">房貸支出</th>
+                    <th className="px-4 py-3 text-orange-400">信貸支出</th>
+                    <th className="px-4 py-3 text-blue-400">質押利息</th>
+                    <th className="px-4 py-3 text-slate-400">生活費</th>
+                    <th className="px-4 py-3 text-purple-400">稅金</th>
+                    <th className="px-4 py-3 text-right rounded-r-lg">淨現金流</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyFlows.map((row) => (
+                    <tr key={row.month} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
+                      <td className="px-4 py-3 font-medium text-white">{row.month}月</td>
+                      <td className="px-4 py-3 text-emerald-400">{formatMoney(row.dividendInflow)}</td>
+                      <td className="px-4 py-3 text-red-400">{formatMoney(row.loanOutflow)}</td>
+                      <td className="px-4 py-3 text-orange-400">{formatMoney(row.creditLoanOutflow)}</td>
+                      <td className="px-4 py-3 text-blue-400">{formatMoney(row.stockLoanInterest)}</td>
+                      <td className="px-4 py-3 text-slate-400">{formatMoney(row.livingExpenses)}</td>
+                      <td className="px-4 py-3 text-purple-400">{formatMoney(row.taxWithheld)}</td>
+                      <td className={`px-4 py-3 text-right font-bold ${row.netFlow >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatMoney(row.netFlow)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
         </div>
       </div>
     </div>
