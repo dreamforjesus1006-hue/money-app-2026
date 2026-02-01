@@ -145,7 +145,7 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 };
 
 // 儲存服務
-const STORAGE_KEY = 'baozutang_data_v38_final'; 
+const STORAGE_KEY = 'baozutang_data_v39_final'; 
 const CONFIG_KEY = 'baozutang_config';
 
 const StorageService = {
@@ -249,6 +249,7 @@ const App: React.FC = () => {
 
   const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   
+  // 計算順序：1. CashFlow -> 2. FireMetrics -> 3. RadarData
   const fireMetrics = useMemo(() => { const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); const inc = monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0); return { ratio: exp>0?(inc/exp)*100:0, annualPassive: inc, annualExpenses: exp }; }, [monthlyFlows]);
   const combatPower = useMemo(() => Math.floor((totalMarketValue/10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
   const levelInfo = useMemo(() => { const r = fireMetrics.ratio; if(r>=100) return {title:'財富國王 👑', color:'text-yellow-400'}; if(r>=50) return {title:'資產領主 ⚔️', color:'text-purple-400'}; if(r>=20) return {title:'理財騎士 🛡️', color:'text-blue-400'}; return {title:'初心冒險者 🪵', color:'text-slate-400'}; }, [fireMetrics]);
@@ -297,6 +298,15 @@ const App: React.FC = () => {
       } 
       return data; 
   }, [monthlyFlows, totalMarketValue, yearlyNetPosition, fireMetrics, reinvest]);
+  
+  // ★★★ 年度總計計算 ★★★
+  const totalDividend = useMemo(() => monthlyFlows.reduce((a, b) => a + b.dividendInflow, 0), [monthlyFlows]);
+  const totalMortgage = useMemo(() => monthlyFlows.reduce((a, b) => a + b.loanOutflow, 0), [monthlyFlows]);
+  const totalCredit = useMemo(() => monthlyFlows.reduce((a, b) => a + b.creditLoanOutflow, 0), [monthlyFlows]);
+  const totalStockInterest = useMemo(() => monthlyFlows.reduce((a, b) => a + b.stockLoanInterest, 0), [monthlyFlows]);
+  const totalLiving = useMemo(() => monthlyFlows.reduce((a, b) => a + b.livingExpenses, 0), [monthlyFlows]);
+  const totalTax = useMemo(() => monthlyFlows.reduce((a, b) => a + b.taxWithheld, 0), [monthlyFlows]);
+  const totalNet = useMemo(() => monthlyFlows.reduce((a, b) => a + b.netFlow, 0), [monthlyFlows]);
 
   // Handlers
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
@@ -421,7 +431,7 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V38 Loan Details</span></h1>
+           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V39 Total</span></h1>
            <div className="flex items-center gap-4 mt-2"><div className="flex gap-2"><div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">{saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}{saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}</div></div></div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -651,7 +661,7 @@ const App: React.FC = () => {
                 </div>
              )}
 
-             {/* Monthly Cash Flow Table (新增) */}
+             {/* Monthly Cash Flow Table (Added Total Row) */}
             <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg overflow-x-auto">
               <h3 className="text-lg font-bold mb-4 text-white flex items-center gap-2"><Calendar className="w-5 h-5 text-blue-400"/> 每月現金流明細</h3>
               <table className="w-full text-sm text-left text-slate-300">
@@ -683,6 +693,19 @@ const App: React.FC = () => {
                     </tr>
                   ))}
                 </tbody>
+                {/* ★★★ 新增：年度總計列 ★★★ */}
+                <tfoot>
+                  <tr className="font-bold bg-slate-900 border-t-2 border-slate-600">
+                      <td className="px-4 py-3 text-white">年度總計</td>
+                      <td className="px-4 py-3 text-emerald-400">{formatMoney(totalDividend)}</td>
+                      <td className="px-4 py-3 text-red-400">{formatMoney(totalMortgage)}</td>
+                      <td className="px-4 py-3 text-orange-400">{formatMoney(totalCredit)}</td>
+                      <td className="px-4 py-3 text-blue-400">{formatMoney(totalStockInterest)}</td>
+                      <td className="px-4 py-3 text-slate-400">{formatMoney(totalLiving)}</td>
+                      <td className="px-4 py-3 text-purple-400">{formatMoney(totalTax)}</td>
+                      <td className={`px-4 py-3 text-right ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
 
