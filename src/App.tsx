@@ -3,16 +3,80 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar, Lightbulb, CheckCircle2, HelpCircle, Edit3, ArrowRightLeft, Plus } from 'lucide-react';
 
 // ==========================================
-// 1. 核心定義
+// 1. 您的專屬備份資料 (直接寫入，確保資料不見時能自動還原)
+// ==========================================
+const USER_BACKUP_DATA = {
+  "etfs": [
+    {
+      "payMonths": [2, 5, 8, 11], "costPrice": 36.1, "marginInterestRate": 4.5, "code": "0056", "name": "0056 (元大高股息)", "currentPrice": 38.26, "category": "dividend", "shares": 101000, "dividendPerShare": 0.866, "dividendType": "per_period", "marginLoanAmount": 0, "id": "0056",
+      "lots": [
+        { "id": "1767668577363", "date": "2025-12-15", "price": 36.2, "fee": 515, "shares": 10000 },
+        { "id": "1767668601748", "shares": 1000, "fee": 51, "date": "2025-12-16", "price": 36.09 },
+        { "shares": 5000, "fee": 257, "price": 36.11, "date": "2025-12-16", "id": "1767668616332" },
+        { "fee": 1027, "date": "2025-12-18", "id": "1767668634444", "shares": 20000, "price": 36.04 },
+        { "shares": 20000, "fee": 1025, "id": "1767668652774", "date": "2025-12-18", "price": 35.99 },
+        { "date": "2025-12-18", "id": "1767668681930", "fee": 1232, "shares": 24000, "price": 36.03 },
+        { "shares": 10000, "fee": 513, "date": "2025-12-18", "price": 36.02, "id": "1767668702185" },
+        { "id": "1767668714220", "price": 36.01, "shares": 10000, "fee": 513, "date": "2025-12-18" },
+        { "fee": 52, "price": 36.54, "shares": 1000, "id": "1767668734602", "date": "2025-12-23" }
+      ]
+    },
+    {
+      "marginLoanAmount": 143000, "id": "00919", "marginInterestRate": 4.5, "code": "00919", "costPrice": 22.82, "payMonths": [1, 4, 7, 10], "currentPrice": 23.99, "shares": 20000, "name": "00919 (群益精選)", "dividendPerShare": 2.52, "dividendType": "annual", "category": "dividend",
+      "lots": [
+        { "price": 21.63, "shares": 10000, "date": "2025-12-16", "fee": 308, "id": "1767668450497" },
+        { "date": "2026-01-29", "price": 23.94, "shares": 10000, "margin": 143000, "fee": 341, "id": "1769707306295" }
+      ]
+    },
+    {
+      "dividendType": "per_period", "costPrice": 13.55, "currentPrice": 14.97, "name": "00982A(群益主動強棒)", "shares": 130000, "dividendPerShare": 0.285, "marginLoanAmount": 0, "marginInterestRate": 4.5, "category": "dividend", "id": "00929", "payMonths": [3, 6, 9, 12], "code": "00929",
+      "lots": [
+        { "date": "2025-12-03", "fee": 1075, "price": 13.48, "shares": 56000, "id": "1767668316456" },
+        { "shares": 20000, "price": 13.6, "fee": 387, "id": "1767668343588", "date": "2025-12-18" },
+        { "fee": 193, "id": "1767668363264", "price": 13.55, "shares": 10000, "date": "2025-12-18" },
+        { "price": 13.56, "fee": 850, "id": "1767668387710", "date": "2025-12-18", "shares": 44000 }
+      ]
+    },
+    {
+      "name": "實體黃金 (克)", "payMonths": [], "dividendPerShare": 0, "category": "hedging", "id": "GOLD", "code": "GOLD", "marginInterestRate": 0, "dividendType": "annual", "marginLoanAmount": 0, "currentPrice": 5429, "costPrice": 4806.1, "shares": 72.2,
+      "lots": [
+        { "shares": 62.2, "date": "2026-01-13", "id": "1769369259569", "fee": 422, "price": 4767 },
+        { "shares": 10, "id": "1769369323398", "fee": 71, "date": "2026-01-17", "price": 5000 }
+      ]
+    },
+    {
+      "name": "00992A(主動群益科技創新)", "costPrice": 11.5, "id": "1769705642386", "currentPrice": 11.64, "marginLoanAmount": 137000, "marginInterestRate": 0, "dividendType": "per_period", "category": "dividend", "code": "00992A", "shares": 20000, "dividendPerShare": 0.2, "payMonths": [2, 5, 8, 11],
+      "lots": [
+        { "margin": 68000, "shares": 10000, "fee": 161, "price": 11.36, "date": "2026-01-26", "id": "1769707124128" },
+        { "date": "2026-01-27", "price": 11.61, "id": "1769707159845", "margin": 69000, "shares": 10000, "fee": 165 }
+      ]
+    },
+    {
+      "shares": 10000, "marginInterestRate": 0, "costPrice": 18.43, "dividendType": "per_period", "marginLoanAmount": 108000, "code": "00981A", "dividendPerShare": 0.2, "payMonths": [1, 4, 7, 10], "currentPrice": 18.2, "id": "1769705935074", "category": "dividend", "name": "00981A(主動統一台股增長)",
+      "lots": [
+        { "shares": 10000, "date": "2026-01-27", "fee": 262, "margin": 108000, "id": "1769707050037", "price": 18.4 }
+      ]
+    }
+  ],
+  "loans": [
+    { "id": "loan-1", "paidMonths": 1, "startDate": "2025-12-02", "rate1": 1.775, "rate1Months": 10, "totalMonths": 480, "rate2": 2.275, "name": "新青安房貸", "principal": 8340000, "gracePeriod": 60, "type": "PrincipalAndInterest" },
+    { "startDate": "2022-12-19", "id": "loan-2", "rate1": 2.327, "paidMonths": 37, "rate2": 2.327, "rate1Months": 240, "type": "PrincipalAndInterest", "principal": 9000000, "totalMonths": 240, "gracePeriod": 60, "name": "理財型房貸" }
+  ],
+  "stockLoan": { "rate": 2.56, "principal": 0, "maintenanceLimit": 130 },
+  "creditLoan": { "rate": 4.05, "totalMonths": 84, "principal": 3040000, "paidMonths": 0 },
+  "globalMarginLoan": { "rate": 4.5, "maintenanceLimit": 130, "principal": 0 },
+  "taxStatus": { "salaryIncome": 589200, "dependents": 0, "hasSpouse": true, "isDisabled": true, "livingExpenses": 0 },
+  "allocation": { "activeRatio": 5, "hedgingRatio": 15, "dividendRatio": 80, "totalFunds": 14500000 }
+};
+
+// ==========================================
+// 2. 核心定義 (Config & Types)
 // ==========================================
 
 const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7', cash: '#334155' };
 
-const MortgageType = {
-  PrincipalAndInterest: 'PrincipalAndInterest',
-  Principal: 'Principal'
-};
+const MortgageType = { PrincipalAndInterest: 'PrincipalAndInterest', Principal: 'Principal' };
 
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
 interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
@@ -24,20 +88,7 @@ interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingR
 interface CloudConfig { apiKey: string; projectId: string; syncId: string; enabled: boolean; priceSourceUrl?: string; }
 interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; collection?: {id:string, count:number}[]; tokens?: number; }
 
-const INITIAL_ETFS: ETF[] = [
-  { id: '1', code: '0056', name: '元大高股息', shares: 0, costPrice: 0, currentPrice: 38.5, dividendPerShare: 2.8, dividendType: 'per_period', payMonths: [1, 4, 7, 10], category: 'dividend', marginLoanAmount: 0 },
-  { id: '2', code: '00919', name: '群益精選高息', shares: 0, costPrice: 0, currentPrice: 26.2, dividendPerShare: 2.4, dividendType: 'per_period', payMonths: [3, 6, 9, 12], category: 'dividend', marginLoanAmount: 0 },
-];
-const INITIAL_LOANS: Loan[] = [{ id: 'l1', name: '房貸一', principal: 0, rate1: 2.06, rate1Months: 24, rate2: 2.15, totalMonths: 360, paidMonths: 0, gracePeriod: 36, type: 'PrincipalAndInterest' }];
-const INITIAL_STOCK_LOAN: StockLoan = { principal: 0, rate: 2.5, maintenanceLimit: 130 };
-const INITIAL_GLOBAL_MARGIN_LOAN: StockLoan = { principal: 0, rate: 6.5 };
-const INITIAL_CREDIT_LOAN: CreditLoan = { principal: 0, rate: 2.8, totalMonths: 84, paidMonths: 0 };
-const INITIAL_TAX_STATUS: TaxStatus = { salaryIncome: 0, livingExpenses: 30000, dependents: 0, hasSpouse: false, isDisabled: false };
-const INITIAL_ALLOCATION: AllocationConfig = { totalFunds: 0, dividendRatio: 70, hedgingRatio: 20, activeRatio: 10 };
-
-const THEMES = {
-    default: { name: '冒險者', color: 'emerald', bg: 'from-emerald-900', border: 'border-emerald-500', text: 'text-emerald-400', icon: <Zap className="w-4 h-4"/> },
-};
+const THEMES = { default: { name: '冒險者', color: 'emerald', bg: 'from-emerald-900', border: 'border-emerald-500', text: 'text-emerald-400', icon: <Zap className="w-4 h-4"/> } };
 
 const GACHA_ITEMS = [
     { id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓', desc: '看透市場本質' },
@@ -47,6 +98,10 @@ const GACHA_ITEMS = [
     { id: 'g5', name: '索羅斯的煉金石', rarity: 'SSR', icon: '🔮', desc: '反身性理論' },
     { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷', desc: '積少成多' },
 ];
+
+// ==========================================
+// 3. 工具與計算函數
+// ==========================================
 
 const formatMoney = (val: any) => {
   if (val === undefined || val === null || isNaN(Number(val))) return '$0';
@@ -81,15 +136,23 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     return { monthlyFlows, yearlyNetPosition, healthInsuranceTotal: totalDividendYear * 0.0211, incomeTaxTotal: 0 }; 
 };
 
-const STORAGE_KEY = 'baozutang_data_v31_fused'; 
+// 儲存服務 (若無資料則讀取備份)
+const STORAGE_KEY = 'baozutang_data_v32_final'; 
 const StorageService = {
     saveData: async (data: any) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
-    loadData: async () => { try { const local = localStorage.getItem(STORAGE_KEY); return { data: local ? JSON.parse(local) : null, source: 'local' }; } catch (e) { return { data: null, source: 'local' }; } },
+    loadData: async () => { 
+        try { 
+            const local = localStorage.getItem(STORAGE_KEY); 
+            if (local) return { data: JSON.parse(local), source: 'local' };
+            // ★★★ 關鍵：如果沒有本地存檔，就回傳您的備份資料 ★★★
+            return { data: USER_BACKUP_DATA, source: 'backup' }; 
+        } catch (e) { return { data: USER_BACKUP_DATA, source: 'backup' }; } 
+    },
     exportToFile: (data: any) => { const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `baozutang_backup.json`; a.click(); }
 };
 
 // ==========================================
-// 2. 主程式 (App) - 包含所有邏輯，無外部依賴
+// 4. 主程式 (App) - 包含完整功能與資料
 // ==========================================
 
 const App: React.FC = () => {
@@ -104,14 +167,14 @@ const App: React.FC = () => {
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
   const [buyForm, setBuyForm] = useState<{shares: string, price: string, date: string, margin: string}>({ shares: '', price: '', date: '', margin: '' });
 
-  // Data State
-  const [etfs, setEtfs] = useState<ETF[]>(INITIAL_ETFS);
-  const [loans, setLoans] = useState<Loan[]>(INITIAL_LOANS);
-  const [stockLoan, setStockLoan] = useState<StockLoan>(INITIAL_STOCK_LOAN);
-  const [globalMarginLoan, setGlobalMarginLoan] = useState<StockLoan>(INITIAL_GLOBAL_MARGIN_LOAN);
-  const [creditLoan, setCreditLoan] = useState<CreditLoan>(INITIAL_CREDIT_LOAN);
-  const [taxStatus, setTaxStatus] = useState<TaxStatus>(INITIAL_TAX_STATUS);
-  const [allocation, setAllocation] = useState<AllocationConfig>(INITIAL_ALLOCATION);
+  // Data State (初始化為您的備份資料)
+  const [etfs, setEtfs] = useState<ETF[]>(USER_BACKUP_DATA.etfs as any);
+  const [loans, setLoans] = useState<Loan[]>(USER_BACKUP_DATA.loans as any);
+  const [stockLoan, setStockLoan] = useState<StockLoan>(USER_BACKUP_DATA.stockLoan);
+  const [globalMarginLoan, setGlobalMarginLoan] = useState<StockLoan>(USER_BACKUP_DATA.globalMarginLoan);
+  const [creditLoan, setCreditLoan] = useState<CreditLoan>(USER_BACKUP_DATA.creditLoan);
+  const [taxStatus, setTaxStatus] = useState<TaxStatus>(USER_BACKUP_DATA.taxStatus);
+  const [allocation, setAllocation] = useState<AllocationConfig>(USER_BACKUP_DATA.allocation);
   
   // Gacha State
   const [collection, setCollection] = useState<{id: string, count: number}[]>([]);
@@ -128,16 +191,17 @@ const App: React.FC = () => {
       try {
         const result = await StorageService.loadData();
         if (result.data) {
-          const { etfs, loans, stockLoan, globalMarginLoan, creditLoan, taxStatus, allocation, collection: c, tokens: t } = result.data as any;
-          setEtfs(Array.isArray(etfs) ? etfs : INITIAL_ETFS);
-          setLoans(Array.isArray(loans) ? loans : INITIAL_LOANS);
-          setStockLoan(stockLoan || INITIAL_STOCK_LOAN); 
-          setGlobalMarginLoan(globalMarginLoan || INITIAL_GLOBAL_MARGIN_LOAN);
-          setCreditLoan(creditLoan || INITIAL_CREDIT_LOAN); 
-          setTaxStatus(taxStatus ? { ...INITIAL_TAX_STATUS, ...taxStatus } : INITIAL_TAX_STATUS);
-          setAllocation(allocation || INITIAL_ALLOCATION);
-          setCollection(Array.isArray(c) ? c : []); 
-          setTokens(typeof t === 'number' ? t : 5);
+          const d = result.data;
+          // 使用 any 繞過嚴格型別檢查，確保資料能載入
+          if (d.etfs) setEtfs(d.etfs);
+          if (d.loans) setLoans(d.loans);
+          if (d.stockLoan) setStockLoan(d.stockLoan);
+          if (d.globalMarginLoan) setGlobalMarginLoan(d.globalMarginLoan);
+          if (d.creditLoan) setCreditLoan(d.creditLoan);
+          if (d.taxStatus) setTaxStatus(d.taxStatus);
+          if (d.allocation) setAllocation(d.allocation);
+          if (d.collection) setCollection(d.collection);
+          if (d.tokens) setTokens(d.tokens);
         }
       } catch (error) { console.error("Init failed", error); } finally { setIsInitializing(false); }
     };
@@ -166,14 +230,11 @@ const App: React.FC = () => {
   const unrealizedPL = totalMarketValue - etfs.reduce((acc, e) => acc + (e.shares * e.costPrice), 0);
 
   const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
-  
-  // 計算順序修正：先算 fireMetrics，後面 radarData 才能用
   const fireMetrics = useMemo(() => { const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); const inc = monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0); return { ratio: exp>0?(inc/exp)*100:0, annualPassive: inc, annualExpenses: exp }; }, [monthlyFlows]);
-  
   const combatPower = useMemo(() => Math.floor((totalMarketValue/10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
   const levelInfo = useMemo(() => { const r = fireMetrics.ratio; if(r>=100) return {title:'財富國王 👑', color:'text-yellow-400'}; if(r>=50) return {title:'資產領主 ⚔️', color:'text-purple-400'}; if(r>=20) return {title:'理財騎士 🛡️', color:'text-blue-400'}; return {title:'初心冒險者 🪵', color:'text-slate-400'}; }, [fireMetrics]);
   
-  // Radar Data (現在可以讀到 fireMetrics 了)
+  // Radar Data
   const radarData = useMemo(() => {
       const actualHedging = etfs.filter(e => e.category === 'hedging').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0);
       const actualActive = etfs.filter(e => e.category === 'active').reduce((acc, e) => acc + (e.shares * e.currentPrice), 0);
@@ -197,7 +258,7 @@ const App: React.FC = () => {
   const breakevenTip = useMemo(() => {
      if (yearlyNetPosition >= 0) return null;
      const deficit = Math.abs(yearlyNetPosition);
-     const avgYield = 0.06; // Default assumption
+     const avgYield = 0.06; 
      return { deficit, avgYield: avgYield*100, neededCapital: deficit / avgYield };
   }, [yearlyNetPosition]);
 
@@ -216,7 +277,7 @@ const App: React.FC = () => {
       return data; 
   }, [monthlyFlows, totalMarketValue, yearlyNetPosition, fireMetrics, reinvest]);
 
-  // Handlers (In Scope)
+  // Handlers
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
   const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
   const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
@@ -230,7 +291,6 @@ const App: React.FC = () => {
   const handleReset = () => { if(confirm('確定重置?')) { localStorage.clear(); window.location.reload(); }};
   const handleExport = () => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation });
 
-  // Buy Logic (In Scope)
   const toggleBuy = (id: string) => { setActiveBuyId(activeBuyId === id ? null : id); };
   const toggleLots = (id: string) => { setExpandedEtfId(expandedEtfId === id ? null : id); };
   const submitBuy = (i: number) => {
@@ -248,7 +308,6 @@ const App: React.FC = () => {
     setEtfs(n);
   };
   
-  // Gacha Logic
   const handleGacha = () => {
     if (tokens < 1) return;
     setTokens(t => t - 1);
@@ -260,7 +319,7 @@ const App: React.FC = () => {
   if (isInitializing) return <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400">正在同步雲端資料...</p></div>;
 
   return (
-    <div className={`min-h-screen p-4 md:p-8 font-sans bg-slate-950 text-white selection:bg-emerald-500/30`}>
+    <div className={`min-h-screen p-4 md:p-8 font-sans bg-slate-900 text-white selection:bg-emerald-500/30`}>
       {/* Modals */}
       {gachaResult && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setGachaResult(null)}><div className="bg-slate-900 border border-yellow-500 p-8 rounded-2xl text-center animate-in zoom-in shadow-[0_0_50px_rgba(234,179,8,0.5)]"><div className="text-6xl mb-4 animate-bounce">{gachaResult.icon}</div><div className="text-2xl font-bold text-yellow-400 mb-2">{gachaResult.name}</div><div className="inline-block px-3 py-1 bg-slate-800 rounded-full text-xs text-slate-400 border border-slate-700">{gachaResult.rarity}</div><p className="text-slate-500 mt-6 text-sm">(點擊任意處關閉)</p></div></div>)}
       {showSettings && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"><div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg p-6"><h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Settings className="w-5 h-5"/> 設定</h3><div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 text-xs mb-4"><p className="text-emerald-300 font-bold">雲端同步已開啟</p></div><button onClick={() => setShowSettings(false)} className="w-full py-2 bg-slate-700 rounded hover:bg-slate-600 text-white">關閉</button></div></div>)}
@@ -269,7 +328,7 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V31 Fusion</span></h1>
+           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V32 Final (Data Restored)</span></h1>
            <div className="flex items-center gap-4 mt-2"><div className="flex gap-2"><div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">{saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}{saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}</div></div></div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -320,7 +379,6 @@ const App: React.FC = () => {
                        </PieChart>
                      </ResponsiveContainer>
                 </div>
-                {/* Allocation Inputs */}
                 <div className="space-y-3 bg-slate-900/50 rounded-xl p-3 border border-slate-700/50">
                     <div>
                         <div className="flex justify-between text-xs mb-1"><span className="text-emerald-300 font-bold">配息型</span><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-10 bg-transparent border-b border-slate-600 text-right focus:border-emerald-500 outline-none" /></div>
