@@ -260,6 +260,8 @@ const App: React.FC = () => {
     setCollection(prev => { const ex = prev.find(p => p.id === item.id); return ex ? prev.map(p => p.id === item.id ? {...p, count: p.count + 1} : p) : [...prev, {id: item.id, count: 1}]; });
   };
 
+  const [reinvest, setReinvest] = useState(true); // Added for Snowball
+
   if (isInitializing) return <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center"><Loader2 className="w-10 h-10 animate-spin text-emerald-500" /><p className="ml-4 text-slate-400">正在同步雲端資料...</p></div>;
 
   return (
