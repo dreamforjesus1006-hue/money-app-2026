@@ -8,7 +8,7 @@ import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, Rotat
 const USER_BACKUP_DATA = {
   "etfs": [
     {
-      "payMonths": [2, 5, 8, 11], "costPrice": 36.1, "marginInterestRate": 4.5, "code": "0056", "name": "0056 (元大高股息)", "currentPrice": 38.26, "category": "dividend", "shares": 101000, "dividendPerShare": 0.866, "dividendType": "per_period", "marginLoanAmount": 0, "id": "0056",
+      "payMonths": [2, 5, 8, 11], "costPrice": 36.1, "marginInterestRate": 4.5, "code": "0056", "name": "元大高股息", "currentPrice": 38.26, "category": "dividend", "shares": 101000, "dividendPerShare": 0.866, "dividendType": "per_period", "marginLoanAmount": 0, "id": "0056",
       "lots": [
         { "id": "1767668577363", "date": "2025-12-15", "price": 36.2, "fee": 515, "shares": 10000 },
         { "id": "1767668601748", "shares": 1000, "fee": 51, "date": "2025-12-16", "price": 36.09 },
@@ -22,14 +22,14 @@ const USER_BACKUP_DATA = {
       ]
     },
     {
-      "marginLoanAmount": 143000, "id": "00919", "marginInterestRate": 4.5, "code": "00919", "costPrice": 22.82, "payMonths": [1, 4, 7, 10], "currentPrice": 23.99, "shares": 20000, "name": "00919 (群益精選)", "dividendPerShare": 2.52, "dividendType": "annual", "category": "dividend",
+      "marginLoanAmount": 143000, "id": "00919", "marginInterestRate": 4.5, "code": "00919", "costPrice": 22.82, "payMonths": [1, 4, 7, 10], "currentPrice": 23.99, "shares": 20000, "name": "群益精選", "dividendPerShare": 2.52, "dividendType": "annual", "category": "dividend",
       "lots": [
         { "price": 21.63, "shares": 10000, "date": "2025-12-16", "fee": 308, "id": "1767668450497" },
         { "date": "2026-01-29", "price": 23.94, "shares": 10000, "margin": 143000, "fee": 341, "id": "1769707306295" }
       ]
     },
     {
-      "dividendType": "per_period", "costPrice": 13.55, "currentPrice": 14.97, "name": "00982A(群益主動強棒)", "shares": 130000, "dividendPerShare": 0.285, "marginLoanAmount": 0, "marginInterestRate": 4.5, "category": "dividend", "id": "00929", "payMonths": [3, 6, 9, 12], "code": "00929",
+      "dividendType": "per_period", "costPrice": 13.55, "currentPrice": 14.97, "name": "群益主動強棒", "shares": 130000, "dividendPerShare": 0.285, "marginLoanAmount": 0, "marginInterestRate": 4.5, "category": "dividend", "id": "00929", "payMonths": [3, 6, 9, 12], "code": "00929",
       "lots": [
         { "date": "2025-12-03", "fee": 1075, "price": 13.48, "shares": 56000, "id": "1767668316456" },
         { "shares": 20000, "price": 13.6, "fee": 387, "id": "1767668343588", "date": "2025-12-18" },
@@ -45,14 +45,14 @@ const USER_BACKUP_DATA = {
       ]
     },
     {
-      "name": "00992A(主動群益科技創新)", "costPrice": 11.5, "id": "1769705642386", "currentPrice": 11.64, "marginLoanAmount": 137000, "marginInterestRate": 0, "dividendType": "per_period", "category": "dividend", "code": "00992A", "shares": 20000, "dividendPerShare": 0.2, "payMonths": [2, 5, 8, 11],
+      "name": "主動群益科技創新", "costPrice": 11.5, "id": "1769705642386", "currentPrice": 11.64, "marginLoanAmount": 137000, "marginInterestRate": 0, "dividendType": "per_period", "category": "dividend", "code": "00992A", "shares": 20000, "dividendPerShare": 0.2, "payMonths": [2, 5, 8, 11],
       "lots": [
         { "margin": 68000, "shares": 10000, "fee": 161, "price": 11.36, "date": "2026-01-26", "id": "1769707124128" },
         { "date": "2026-01-27", "price": 11.61, "id": "1769707159845", "margin": 69000, "shares": 10000, "fee": 165 }
       ]
     },
     {
-      "shares": 10000, "marginInterestRate": 0, "costPrice": 18.43, "dividendType": "per_period", "marginLoanAmount": 108000, "code": "00981A", "dividendPerShare": 0.2, "payMonths": [1, 4, 7, 10], "currentPrice": 18.2, "id": "1769705935074", "category": "dividend", "name": "00981A(主動統一台股增長)",
+      "shares": 10000, "marginInterestRate": 0, "costPrice": 18.43, "dividendType": "per_period", "marginLoanAmount": 108000, "code": "00981A", "dividendPerShare": 0.2, "payMonths": [1, 4, 7, 10], "currentPrice": 18.2, "id": "1769705935074", "category": "dividend", "name": "主動統一台股增長",
       "lots": [
         { "shares": 10000, "date": "2026-01-27", "fee": 262, "margin": 108000, "id": "1769707050037", "price": 18.4 }
       ]
@@ -145,7 +145,7 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 };
 
 // 儲存服務
-const STORAGE_KEY = 'baozutang_data_v39_final'; 
+const STORAGE_KEY = 'baozutang_data_v40_final'; 
 const CONFIG_KEY = 'baozutang_config';
 
 const StorageService = {
@@ -163,7 +163,7 @@ const StorageService = {
 };
 
 // ==========================================
-// 4. 主程式 (App) - 包含所有 UI 與邏輯
+// 4. 主程式 (App)
 // ==========================================
 
 const App: React.FC = () => {
@@ -245,11 +245,10 @@ const App: React.FC = () => {
   const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((acc, e) => acc + (e.marginLoanAmount || 0), 0);
   const totalRealDebt = loans.reduce((acc, l) => acc + l.principal, 0) + creditLoan.principal;
   const currentMaintenance = useMemo(() => totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100, [totalMarketValue, totalStockDebt]);
-  const unrealizedPL = totalMarketValue - etfs.reduce((acc, e) => acc + (e.shares * e.costPrice), 0);
+  const unrealizedPL = useMemo(() => totalMarketValue - etfs.reduce((acc, e) => acc + (e.shares * e.costPrice), 0), [totalMarketValue, etfs]);
 
   const { monthlyFlows, yearlyNetPosition, healthInsuranceTotal, incomeTaxTotal } = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   
-  // 計算順序：1. CashFlow -> 2. FireMetrics -> 3. RadarData
   const fireMetrics = useMemo(() => { const exp = monthlyFlows.reduce((a,c)=>a+c.loanOutflow+c.creditLoanOutflow+c.livingExpenses,0); const inc = monthlyFlows.reduce((a,c)=>a+c.dividendInflow,0); return { ratio: exp>0?(inc/exp)*100:0, annualPassive: inc, annualExpenses: exp }; }, [monthlyFlows]);
   const combatPower = useMemo(() => Math.floor((totalMarketValue/10000) + (fireMetrics.annualPassive/12/100)), [totalMarketValue, fireMetrics]);
   const levelInfo = useMemo(() => { const r = fireMetrics.ratio; if(r>=100) return {title:'財富國王 👑', color:'text-yellow-400'}; if(r>=50) return {title:'資產領主 ⚔️', color:'text-purple-400'}; if(r>=20) return {title:'理財騎士 🛡️', color:'text-blue-400'}; return {title:'初心冒險者 🪵', color:'text-slate-400'}; }, [fireMetrics]);
@@ -299,7 +298,7 @@ const App: React.FC = () => {
       return data; 
   }, [monthlyFlows, totalMarketValue, yearlyNetPosition, fireMetrics, reinvest]);
   
-  // ★★★ 年度總計計算 ★★★
+  // 年度總計
   const totalDividend = useMemo(() => monthlyFlows.reduce((a, b) => a + b.dividendInflow, 0), [monthlyFlows]);
   const totalMortgage = useMemo(() => monthlyFlows.reduce((a, b) => a + b.loanOutflow, 0), [monthlyFlows]);
   const totalCredit = useMemo(() => monthlyFlows.reduce((a, b) => a + b.creditLoanOutflow, 0), [monthlyFlows]);
@@ -310,7 +309,7 @@ const App: React.FC = () => {
 
   // Handlers
   const updateEtf = (i: number, f: keyof ETF, v: any) => { const n = [...etfs]; n[i] = { ...n[i], [f]: v }; setEtfs(n); };
-  const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '自選標的', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
+  const addEtf = () => setEtfs([...etfs, { id: Date.now().toString(), name: '新標的', code: '', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [], marginLoanAmount: 0, marginInterestRate: 0, lots: [], category: 'dividend' }]);
   const removeEtf = (id: string) => { if (window.confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
   const toggleEtfDividendType = (index: number) => { const newEtfs = [...etfs]; newEtfs[index].dividendType = newEtfs[index].dividendType === 'annual' ? 'per_period' : 'annual'; setEtfs(newEtfs); };
   const toggleEtfPayMonth = (index: number, month: number) => { const etf = etfs[index]; const ms = etf.payMonths?.includes(month) ? etf.payMonths.filter(m => m !== month) : [...(etf.payMonths || []), month].sort((a, b) => a - b); updateEtf(index, 'payMonths', ms); };
@@ -406,7 +405,6 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
             <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-lg p-6">
                 <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Settings className="w-5 h-5"/> 設定</h3>
-                
                 <div className="mb-4">
                     <label className="text-xs text-slate-400 block mb-1">Google Sheet CSV 連結 (用於更新行情)</label>
                     <input 
@@ -418,7 +416,6 @@ const App: React.FC = () => {
                     />
                     <p className="text-[10px] text-slate-500 mt-1">請確保試算表已發佈為 CSV 格式 (A欄:代號, B欄:現價)</p>
                 </div>
-
                 <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-lg p-3 text-xs mb-4">
                     <p className="text-emerald-300 font-bold">雲端同步已開啟</p>
                 </div>
@@ -431,7 +428,7 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V39 Total</span></h1>
+           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V40 Code Input</span></h1>
            <div className="flex items-center gap-4 mt-2"><div className="flex gap-2"><div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">{saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}{saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}</div></div></div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -520,7 +517,18 @@ const App: React.FC = () => {
                             <div key={etf.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 hover:border-emerald-500/50 transition-all">
                                 <div className="flex justify-between items-center mb-2">
                                     <div className="flex items-center gap-2 flex-1">
-                                        <div className="relative group/edit"><input type="text" value={etf.name} onChange={(e) => updateEtf(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-500 focus:border-emerald-500 outline-none w-28 transition-all" /><Edit3 className="w-3 h-3 text-slate-600 absolute -right-4 top-1.5 opacity-0 group-hover/edit:opacity-100" /></div>
+                                        <div className="relative group/edit">
+                                            {/* ★★★ V40 新增：代號輸入框 (Code Input) ★★★ */}
+                                            <input 
+                                                type="text" 
+                                                value={etf.code || ''} 
+                                                onChange={(e) => updateEtf(idx, 'code', e.target.value)} 
+                                                className="absolute -top-5 left-0 text-[10px] bg-slate-800 text-slate-400 border border-slate-600 rounded px-1 w-16 focus:w-24 transition-all outline-none" 
+                                                placeholder="代號"
+                                            />
+                                            <input type="text" value={etf.name} onChange={(e) => updateEtf(idx, 'name', e.target.value)} className="bg-transparent font-bold text-white border-b border-transparent hover:border-slate-500 focus:border-emerald-500 outline-none w-28 transition-all" />
+                                            <Edit3 className="w-3 h-3 text-slate-600 absolute -right-4 top-1.5 opacity-0 group-hover/edit:opacity-100" />
+                                        </div>
                                         <select value={etf.category || 'dividend'} onChange={(e) => updateEtf(idx, 'category', e.target.value)} className="text-[10px] bg-slate-800 border border-slate-600 rounded px-1 text-slate-300"><option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option></select>
                                     </div>
                                     <div className="flex gap-1">
