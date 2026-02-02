@@ -131,7 +131,6 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
         let dividendInflow = 0;
         (etfs || []).forEach(etf => { 
             if (etf.payMonths?.includes(m)) {
-                // ★★★ 關鍵修正：判斷配息是「年」還是「次」 ★★★
                 let payoutPerShare = etf.dividendPerShare;
                 if (etf.dividendType === 'annual' && etf.payMonths && etf.payMonths.length > 0) {
                     payoutPerShare = etf.dividendPerShare / etf.payMonths.length;
@@ -154,7 +153,7 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 };
 
 // 儲存服務
-const STORAGE_KEY = 'baozutang_data_v41_final'; 
+const STORAGE_KEY = 'baozutang_data_v42_financial'; 
 const CONFIG_KEY = 'baozutang_config';
 
 const StorageService = {
@@ -437,7 +436,7 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="mb-8 border-b border-slate-700 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V41 Dividend Unit</span></h1>
+           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator className="w-8 h-8" /> 包租唐戰情室 <span className="text-xs bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30">V42 Ultimate Dashboard</span></h1>
            <div className="flex items-center gap-4 mt-2"><div className="flex gap-2"><div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-xs shadow-sm">{saveStatus === 'saving' && <><Loader2 className="w-3 h-3 animate-spin text-amber-400" /><span className="text-amber-400">儲存中...</span></>}{saveStatus === 'saved' && <><Cloud className="w-3 h-3 text-emerald-400" /><span className="text-emerald-400">已同步</span></>}</div></div></div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -512,7 +511,7 @@ const App: React.FC = () => {
                 </div>
             </section>
 
-            {/* Asset List (Updated with Dividend Type Select) */}
+            {/* ★★★ Asset List (V42: 新增財務欄位 - 融資額/利率/市值/損益) ★★★ */}
             <section className="bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg">
                 <h2 className="text-xl font-semibold mb-4 text-emerald-300 flex items-center gap-2"><Activity className="w-5 h-5" /> 資產配置 (ETF)</h2>
                 <div className="space-y-4">
@@ -522,6 +521,13 @@ const App: React.FC = () => {
                         const isBuying = activeBuyId === etf.id;
                         const isPerPeriod = etf.dividendType === 'per_period';
                         const yoc = etf.costPrice > 0 ? (etf.dividendPerShare * (isPerPeriod && etf.payMonths?.length ? etf.payMonths.length : 1)) / etf.costPrice * 100 : 0;
+                        
+                        // 計算個股財務數據
+                        const marketValue = etf.shares * etf.currentPrice;
+                        const totalCost = etf.shares * etf.costPrice;
+                        const profit = marketValue - totalCost;
+                        const roi = totalCost > 0 ? (profit / totalCost) * 100 : 0;
+
                         return (
                             <div key={etf.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 hover:border-emerald-500/50 transition-all">
                                 <div className="flex justify-between items-center mb-2">
@@ -550,8 +556,6 @@ const App: React.FC = () => {
                                 <div className="grid grid-cols-4 gap-2 mb-2">
                                     <div><label className="text-xs text-slate-500 block">股數</label><input type="number" value={etf.shares} onChange={(e) => updateEtf(idx, 'shares', Number(e.target.value))} disabled={hasLots} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div>
                                     <div><label className="text-xs text-slate-500 block">成本</label><input type="number" value={etf.costPrice} onChange={(e) => updateEtf(idx, 'costPrice', Number(e.target.value))} disabled={hasLots} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" />{etf.costPrice > 0 && <div className="text-[9px] text-amber-400 mt-0.5">YoC: {yoc.toFixed(1)}%</div>}</div>
-                                    
-                                    {/* ★★★ V41 升級：配息單位選擇 (Dividend Unit Selector) ★★★ */}
                                     <div>
                                         <label className="text-xs text-slate-500 block">配息金額</label>
                                         <div className="flex gap-1">
@@ -562,10 +566,32 @@ const App: React.FC = () => {
                                             </select>
                                         </div>
                                     </div>
-                                    
                                     <div><label className="text-xs text-slate-500 block">現價</label><input type="number" value={etf.currentPrice} onChange={(e) => updateEtf(idx, 'currentPrice', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm" /></div>
                                 </div>
-                                <div className="mb-2 flex gap-1 flex-wrap">{Array.from({length: 12}, (_, i) => i + 1).map(m => (<button key={m} onClick={() => toggleEtfPayMonth(idx, m)} className={`w-6 h-6 rounded-full text-[10px] flex items-center justify-center transition-all ${etf.payMonths?.includes(m) ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>{m}</button>))}</div>
+                                
+                                {/* ★★★ 新增：財務資訊第二排 (融資 / 市值 / 損益) ★★★ */}
+                                <div className="grid grid-cols-4 gap-2 mt-2 pt-2 border-t border-slate-800/50">
+                                    <div>
+                                        <label className="text-[10px] text-blue-300 block">融資總額</label>
+                                        <input type="number" value={etf.marginLoanAmount || 0} onChange={(e) => updateEtf(idx, 'marginLoanAmount', Number(e.target.value))} className="w-full bg-slate-900 border border-blue-900/50 rounded px-2 py-1 text-xs text-blue-200" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-blue-300 block">利率%</label>
+                                        <input type="number" value={etf.marginInterestRate || 0} onChange={(e) => updateEtf(idx, 'marginInterestRate', Number(e.target.value))} className="w-full bg-slate-900 border border-blue-900/50 rounded px-2 py-1 text-xs text-blue-200" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-slate-500 block">總市值</label>
+                                        <div className="text-sm font-mono text-slate-300 pt-1">{formatMoney(marketValue)}</div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] text-slate-500 block">損益 (P/L)</label>
+                                        <div className={`text-sm font-mono pt-1 ${profit >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                                           {formatMoney(profit)} <span className="text-[10px] opacity-70">({roi.toFixed(1)}%)</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-2 flex gap-1 flex-wrap">{Array.from({length: 12}, (_, i) => i + 1).map(m => (<button key={m} onClick={() => toggleEtfPayMonth(idx, m)} className={`w-5 h-5 rounded text-[9px] flex items-center justify-center transition-all ${etf.payMonths?.includes(m) ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>{m}</button>))}</div>
                                 {isExpanded && etf.lots && (<div className="mt-3 pt-3 border-t border-slate-700 bg-slate-800/50 rounded-xl p-2"><div className="space-y-1">{etf.lots.map(lot => (<div key={lot.id} className="grid grid-cols-4 items-center bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs"><span className="text-slate-300">{lot.date}</span><span className="text-right text-emerald-300">{lot.shares}</span><div className="text-right"><span className="text-amber-300">{lot.price}</span><span className="text-[9px] text-slate-500 block">+{lot.fee}</span></div><div className="text-center"><button onClick={() => removeLot(idx, lot.id)} className="text-red-400"><Trash2 className="w-3 h-3" /></button></div></div>))}</div></div>)}
                             </div>
                         );
