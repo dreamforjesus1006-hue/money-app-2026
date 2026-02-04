@@ -17,27 +17,51 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 // ==========================================
-// 1. 您的專屬備份資料 (作為離線預設值)
+// 1. 核心定義與介面 (Interfaces)
 // ==========================================
+interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
+interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
+interface Loan { id: string; name: string; principal: number; rate1: number; rate1Months: number; rate2: number; totalMonths: number; paidMonths: number; gracePeriod: number; startDate?: string; type: string; }
+interface StockLoan { principal: number; rate: number; maintenanceLimit?: number; }
+interface CreditLoan { principal: number; rate: number; totalMonths: number; paidMonths: number; }
+interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
+interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
+interface CloudConfig { enabled: boolean; priceSourceUrl?: string; }
+interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; }
+
+const BROKERAGE_RATE = 0.001425;
+const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7', cash: '#334155' };
+const THEMES = { default: { name: '冒險者', color: 'emerald', bg: 'from-emerald-900', border: 'border-emerald-500', text: 'text-emerald-400', icon: <Zap className="w-4 h-4"/> } };
+const GACHA_ITEMS = [{ id: 'g1', name: '巴菲特的眼鏡', rarity: 'SR', icon: '👓' }, { id: 'g2', name: '蒙格的格柵', rarity: 'SSR', icon: '🏗️' }, { id: 'g6', name: '存錢小豬', rarity: 'N', icon: '🐷' }];
+
+// 您的備份資料 (預設初始值)
 const USER_BACKUP_DATA = {
   "etfs": [
-    { "payMonths": [2, 5, 8, 11], "costPrice": 36.1, "marginInterestRate": 4.5, "code": "0056", "name": "元大高股息", "currentPrice": 38.26, "category": "dividend", "shares": 101000, "dividendPerShare": 0.866, "dividendType": "per_period", "marginLoanAmount": 0, "id": "0056" },
-    { "marginLoanAmount": 143000, "id": "00919", "marginInterestRate": 4.5, "code": "00919", "costPrice": 22.82, "payMonths": [1, 4, 7, 10], "currentPrice": 23.99, "shares": 20000, "name": "群益精選", "dividendPerShare": 2.52, "dividendType": "annual", "category": "dividend" },
-    { "name": "實體黃金 (克)", "payMonths": [], "dividendPerShare": 0, "category": "hedging", "id": "GOLD", "code": "GOLD", "currentPrice": 5429, "costPrice": 4806.1, "shares": 72.2 }
+    { "payMonths": [2, 5, 8, 11], "costPrice": 36.1, "code": "0056", "name": "元大高股息", "currentPrice": 38.26, "category": "dividend", "shares": 101000, "dividendPerShare": 0.866, "dividendType": "per_period", "id": "0056" },
+    { "id": "00919", "code": "00919", "costPrice": 22.82, "payMonths": [1, 4, 7, 10], "currentPrice": 23.99, "shares": 20000, "name": "群益精選", "dividendPerShare": 2.52, "dividendType": "annual", "category": "dividend", "marginLoanAmount": 143000 },
+    { "name": "實體黃金 (克)", "category": "hedging", "id": "GOLD", "currentPrice": 5429, "costPrice": 4806.1, "shares": 72.2 }
   ],
   "loans": [
     { "id": "loan-1", "paidMonths": 1, "startDate": "2025-12-02", "rate1": 1.775, "rate1Months": 10, "totalMonths": 480, "rate2": 2.275, "name": "新青安房貸", "principal": 8340000, "gracePeriod": 60, "type": "PrincipalAndInterest" },
-    { "startDate": "2022-12-19", "id": "loan-2", "rate1": 2.327, "paidMonths": 37, "rate2": 2.327, "rate1Months": 240, "principal": 9000000, "totalMonths": 240, "gracePeriod": 60, "name": "理財型房貸", "type": "PrincipalAndInterest" }
+    { "id": "loan-2", "rate1": 2.327, "paidMonths": 37, "rate2": 2.327, "principal": 9000000, "totalMonths": 240, "gracePeriod": 60, "name": "理財型房貸", "type": "PrincipalAndInterest" }
   ],
   "stockLoan": { "rate": 2.56, "principal": 0, "maintenanceLimit": 130 },
   "creditLoan": { "rate": 4.05, "totalMonths": 84, "principal": 3040000, "paidMonths": 0 },
-  "globalMarginLoan": { "rate": 4.5, "maintenanceLimit": 130, "principal": 0 },
-  "taxStatus": { "salaryIncome": 589200, "dependents": 0, "hasSpouse": true, "isDisabled": true, "livingExpenses": 0 },
+  "globalMarginLoan": { "rate": 4.5, "principal": 0 },
+  "taxStatus": { "salaryIncome": 589200, "livingExpenses": 0, "hasSpouse": true, "isDisabled": true, "dependents": 0 },
   "allocation": { "activeRatio": 5, "hedgingRatio": 15, "dividendRatio": 80, "totalFunds": 14500000 }
 };
 
+const INITIAL_ETFS = USER_BACKUP_DATA.etfs as any[];
+const INITIAL_LOANS = USER_BACKUP_DATA.loans as any[];
+const INITIAL_STOCK_LOAN = USER_BACKUP_DATA.stockLoan;
+const INITIAL_GLOBAL_MARGIN_LOAN = USER_BACKUP_DATA.globalMarginLoan;
+const INITIAL_CREDIT_LOAN = USER_BACKUP_DATA.creditLoan;
+const INITIAL_TAX_STATUS = USER_BACKUP_DATA.taxStatus;
+const INITIAL_ALLOCATION = USER_BACKUP_DATA.allocation;
+
 // ==========================================
-// 2. 核心計算
+// 2. 工具函數
 // ==========================================
 const formatMoney = (val: any) => `$${Math.floor(Number(val) || 0).toLocaleString()}`;
 
@@ -57,30 +81,8 @@ const recalculateEtfStats = (etf: ETF): ETF => {
     return { ...etf, shares: totalShares, costPrice: totalShares > 0 ? Number((totalCost / totalShares).toFixed(2)) : 0, marginLoanAmount: totalMargin };
 };
 
-const generateCashFlow = (etfs: ETF[], loans: any[], stockLoan: any, creditLoan: any, globalMarginLoan: any, taxStatus: any) => {
-    const monthlyFlows = [];
-    for (let m = 1; m <= 12; m++) {
-        let divIn = 0;
-        etfs.forEach(e => {
-            if (e.payMonths?.includes(m)) {
-                let payout = e.dividendPerShare;
-                if (e.dividendType === 'annual' && e.payMonths.length > 0) payout /= e.payMonths.length;
-                divIn += e.shares * payout;
-            }
-        });
-        let loanOut = 0; loans.forEach(l => loanOut += calculateLoanPayment(l));
-        const cRate = creditLoan.rate / 100 / 12;
-        const creditOut = creditLoan.principal > 0 ? Math.floor((creditLoan.principal * cRate * Math.pow(1 + cRate, creditLoan.totalMonths)) / (Math.pow(1 + cRate, creditLoan.totalMonths) - 1)) : 0;
-        const stockInt = Math.floor((stockLoan.principal * (stockLoan.rate/100)/12) + (globalMarginLoan.principal * (globalMarginLoan.rate/100)/12));
-        const marginInt = etfs.reduce((acc, e) => acc + ((e.marginLoanAmount||0) * ((e.marginInterestRate||6.5)/100)/12), 0);
-        const tax = Math.floor(divIn * 0.0211);
-        monthlyFlows.push({ month: m, divIn, loanOut, creditOut, stockInt: stockInt + marginInt, life: taxStatus.livingExpenses, tax, net: divIn - loanOut - creditOut - stockInt - marginInt - taxStatus.livingExpenses - tax });
-    }
-    return monthlyFlows;
-};
-
 // ==========================================
-// 3. Firebase 定位修正 (Match Screenshot)
+// 3. Firebase 定位
 // ==========================================
 let db: any = null;
 const isFirebaseConfigured = YOUR_FIREBASE_CONFIG.apiKey && !YOUR_FIREBASE_CONFIG.apiKey.includes("請貼上");
@@ -88,8 +90,7 @@ if (isFirebaseConfigured) {
     try { const app = initializeApp(YOUR_FIREBASE_CONFIG); db = getFirestore(app); } catch(e) { console.error(e); }
 }
 
-const STORAGE_KEY = 'baozutang_v46';
-// ★★★ 修正路徑：依照截圖定位為 portfolios / tony1006 ★★★
+const STORAGE_KEY = 'baozutang_v47';
 const COLLECTION_NAME = "portfolios";
 const DOCUMENT_ID = "tony1006";
 
@@ -106,6 +107,10 @@ const StorageService = {
         }
         const local = localStorage.getItem(STORAGE_KEY);
         return local ? { data: JSON.parse(local), source: 'local' } : { data: USER_BACKUP_DATA, source: 'backup' };
+    },
+    exportToFile: (data: any) => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `baozutang_backup.json`; a.click();
     }
 };
 
@@ -117,7 +122,6 @@ const App: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [dataSrc, setDataSrc] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
-  const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
 
   // Data State
   const [etfs, setEtfs] = useState<ETF[]>(INITIAL_ETFS);
@@ -134,7 +138,6 @@ const App: React.FC = () => {
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
   const [buyForm, setBuyForm] = useState({ shares: '', price: '', date: '', margin: '' });
 
-  // Load Data
   useEffect(() => {
     StorageService.loadData().then(res => {
       setDataSrc(res.source);
@@ -148,7 +151,6 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // Save Data
   useEffect(() => {
     if (isInitializing) return;
     setSaveStatus('saving');
@@ -157,109 +159,133 @@ const App: React.FC = () => {
         .then(() => { setSaveStatus('saved'); setTimeout(() => setSaveStatus('idle'), 2000); });
     }, 1500);
     return () => clearTimeout(t);
-  }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation]);
+  }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, isInitializing]);
 
-  // Calculations
+  const monthlyFlows = useMemo(() => {
+    const flows = [];
+    for (let m = 1; m <= 12; m++) {
+        let divIn = 0;
+        etfs.forEach(e => {
+            if (e.payMonths?.includes(m)) {
+                let payout = e.dividendPerShare;
+                if (e.dividendType === 'annual' && e.payMonths.length > 0) payout /= e.payMonths.length;
+                divIn += e.shares * payout;
+            }
+        });
+        let loanOut = 0; loans.forEach(l => loanOut += calculateLoanPayment(l));
+        const cRate = creditLoan.rate / 100 / 12;
+        const creditOut = creditLoan.principal > 0 ? Math.floor((creditLoan.principal * cRate * Math.pow(1 + cRate, creditLoan.totalMonths)) / (Math.pow(1 + cRate, creditLoan.totalMonths) - 1)) : 0;
+        const stockInt = Math.floor((stockLoan.principal * (stockLoan.rate/100)/12) + (globalMarginLoan.principal * (globalMarginLoan.rate/100)/12));
+        const marginInt = etfs.reduce((acc, e) => acc + ((e.marginLoanAmount||0) * ((e.marginInterestRate||6.5)/100)/12), 0);
+        const tax = Math.floor(divIn * 0.0211);
+        flows.push({ month: m, divIn, loanOut, creditOut, stockInt: stockInt + marginInt, life: taxStatus.livingExpenses, tax, net: divIn - loanOut - creditOut - stockInt - marginInt - taxStatus.livingExpenses - tax });
+    }
+    return flows;
+  }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
+
+  // 年度總計
+  const totalDividend = useMemo(() => monthlyFlows.reduce((a, b) => a + b.divIn, 0), [monthlyFlows]);
+  const totalMortgage = useMemo(() => monthlyFlows.reduce((a, b) => a + b.loanOut, 0), [monthlyFlows]);
+  const totalCredit = useMemo(() => monthlyFlows.reduce((a, b) => a + b.creditOut, 0), [monthlyFlows]);
+  const totalStockInterest = useMemo(() => monthlyFlows.reduce((a, b) => a + b.stockInt, 0), [monthlyFlows]);
+  const totalLiving = useMemo(() => monthlyFlows.reduce((a, b) => a + b.life * 1, 0), [monthlyFlows]);
+  const totalTax = useMemo(() => monthlyFlows.reduce((a, b) => a + b.tax, 0), [monthlyFlows]);
+  const totalNet = useMemo(() => monthlyFlows.reduce((a, b) => a + b.net, 0), [monthlyFlows]);
+
   const totalValue = etfs.reduce((a, e) => a + (e.shares * e.currentPrice), 0);
-  const totalDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((a, e) => a + (e.marginLoanAmount || 0), 0);
-  const maintenance = totalDebt === 0 ? 999 : (totalValue / totalDebt) * 100;
-  
-  const monthlyFlows = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
-  const fireMetrics = useMemo(() => {
-      const exp = monthlyFlows.reduce((a, c) => a + c.loanOut, 0) + (taxStatus.livingExpenses * 12);
-      const inc = monthlyFlows.reduce((a, c) => a + c.divIn, 0);
-      return { ratio: exp > 0 ? (inc / exp) * 100 : 0, inc, exp };
-  }, [monthlyFlows, taxStatus]);
+  const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((a, e) => a + (e.marginLoanAmount || 0), 0);
+  const maintenance = totalStockDebt === 0 ? 999 : (totalValue / totalStockDebt) * 100;
 
-  // ★★★ 修正：資產分配 (扣除融資) ★★★
   const actualDiv = etfs.filter(e => e.category === 'dividend').reduce((a, e) => a + (e.shares * e.currentPrice) - (e.marginLoanAmount || 0), 0);
   const actualHedge = etfs.filter(e => e.category === 'hedging').reduce((a, e) => a + (e.shares * e.currentPrice) - (e.marginLoanAmount || 0), 0);
-  const actualAct = etfs.filter(e => e.category === 'active').reduce((a, e) => a + (e.shares * e.currentPrice) - (e.marginLoanAmount || 0), 0);
 
   const radarData = [
-    { subject: '現金流', A: Math.min(100, fireMetrics.ratio), fullMark: 100 },
-    { subject: '安全性', A: Math.min(100, (actualHedge / (totalValue - totalDebt || 1)) * 500), fullMark: 100 },
-    { subject: '抗壓性', A: Math.min(100, (maintenance - 130) * 2), fullMark: 100 },
-    { subject: '稅務', A: 80, fullMark: 100 },
+    { subject: '現金流', A: Math.min(100, (totalDividend / (totalMortgage + totalCredit + totalStockInterest + totalLiving || 1)) * 100) },
+    { subject: '安全性', A: Math.min(100, (actualHedge / (totalValue - totalStockDebt || 1)) * 500) },
+    { subject: '抗壓性', A: Math.min(100, (maintenance - 130) * 2) },
+    { subject: '稅務', A: 80 },
   ];
 
-  const updateEtf = (i: number, f: string, v: any) => { const n = [...etfs]; (n[i] as any)[f] = v; setEtfs(n); };
   const moveEtf = (i: number, d: number) => { const n = [...etfs]; if(i+d < 0 || i+d >= n.length) return; [n[i], n[i+d]] = [n[i+d], n[i]]; setEtfs(n); };
+  const removeEtf = (id: string) => { if (confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
+  const updateLoan = (i: number, f: string, v: any) => { const n = [...loans]; (n[i] as any)[f] = v; setLoans(n); };
 
-  if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> 同步中...</div>;
+  if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> 載入中...</div>;
 
   return (
-    <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white">
-      <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-700 pb-4">
+    <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans">
+      <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V46</h1>
+          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
-              {saveStatus === 'saving' ? <Loader2 className="w-3 h-3 animate-spin"/> : dataSrc === 'cloud' ? <Wifi className="w-3 h-3 text-blue-400"/> : <WifiOff className="w-3 h-3 text-slate-500"/>}
-              {dataSrc === 'cloud' ? "雲端連線" : "本機模式"}
+              {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin"/> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400"/> : <WifiOff size={12} className="text-slate-500"/>}
+              {dataSrc === 'cloud' ? "雲端同步" : "本機模式"}
             </span>
           </div>
         </div>
         <div className="flex gap-2">
-            <button onClick={() => setShowSettings(true)} className="px-3 py-2 bg-slate-800 rounded-lg text-sm flex items-center gap-2 border border-slate-700"><Settings className="w-4 h-4 text-blue-400"/>設定</button>
-            <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation })} className="px-3 py-2 bg-slate-800 rounded-lg text-sm flex items-center gap-2 border border-slate-700"><Download className="w-4 h-4 text-emerald-400"/>匯出</button>
+            <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded border border-slate-700"><Settings size={18}/></button>
+            <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation })} className="p-2 bg-slate-800 rounded border border-slate-700 text-emerald-400"><Download size={18}/></button>
         </div>
       </header>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
-          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-cyan-300"><ShieldCheck/> 資產體質</h2>
-            <div className="h-64"><ResponsiveContainer width="100%" height="100%"><RadarChart data={radarData}><PolarGrid/><PolarAngleAxis dataKey="subject"/><Radar dataKey="A" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.5}/></RadarChart></ResponsiveContainer></div>
+          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+            <h2 className="text-lg font-bold mb-4 text-cyan-300 flex items-center gap-2"><ShieldCheck/> 資產體質</h2>
+            <div className="h-64"><ResponsiveContainer width="100%" height="100%"><RadarChart data={radarData}><PolarGrid stroke="#334155"/><PolarAngleAxis dataKey="subject" tick={{fill:'#94a3b8', fontSize:12}}/><Radar dataKey="A" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.5}/></RadarChart></ResponsiveContainer></div>
           </section>
 
-          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
-            <h2 className="text-lg font-bold mb-4 text-blue-300"><PieIcon className="inline mr-2"/>資金分配 (淨值)</h2>
+          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+            <h2 className="text-lg font-bold mb-4 text-blue-300 flex items-center gap-2"><PieIcon/> 資金配置 (淨值)</h2>
             <div className="space-y-4">
-               <div><label className="text-xs text-slate-500">配息型 (缺: {formatMoney(Math.max(0, (allocation.totalFunds * allocation.dividendRatio / 100) - actualDiv))})</label><div className="w-full bg-slate-700 h-2 rounded-full mt-1 overflow-hidden"><div className="bg-emerald-500 h-full" style={{width: `${Math.min(100, (actualDiv / (allocation.totalFunds * allocation.dividendRatio / 100 || 1)) * 100)}%`}}></div></div></div>
-               <div><label className="text-xs text-slate-500">避險型 (缺: {formatMoney(Math.max(0, (allocation.totalFunds * allocation.hedgingRatio / 100) - actualHedge))})</label><div className="w-full bg-slate-700 h-2 rounded-full mt-1 overflow-hidden"><div className="bg-amber-500 h-full" style={{width: `${Math.min(100, (actualHedge / (allocation.totalFunds * allocation.hedgingRatio / 100 || 1)) * 100)}%`}}></div></div></div>
+               <div>
+                   <div className="flex justify-between text-xs mb-1"><span>配息型</span><span className={actualDiv < (allocation.totalFunds * allocation.dividendRatio / 100) ? "text-red-400" : "text-emerald-400"}>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.dividendRatio / 100) - actualDiv))}</span></div>
+                   <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full" style={{width: `${Math.min(100, (actualDiv / (allocation.totalFunds * allocation.dividendRatio / 100 || 1)) * 100)}%`}}></div></div>
+               </div>
+               <div>
+                   <div className="flex justify-between text-xs mb-1"><span>避險型</span><span className={actualHedge < (allocation.totalFunds * allocation.hedgingRatio / 100) ? "text-red-400" : "text-emerald-400"}>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.hedgingRatio / 100) - actualHedge))}</span></div>
+                   <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden"><div className="bg-amber-500 h-full" style={{width: `${Math.min(100, (actualHedge / (allocation.totalFunds * allocation.hedgingRatio / 100 || 1)) * 100)}%`}}></div></div>
+               </div>
             </div>
           </section>
 
-          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
-            <h2 className="text-lg font-bold mb-4 text-emerald-400"><Activity className="inline mr-2"/>標的清單</h2>
+          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
+            <h2 className="text-lg font-bold mb-4 text-emerald-300 flex items-center gap-2"><Activity/> 標的清單</h2>
             <div className="space-y-4">
-              {etfs.map((e, i) => (
+              {etfs.map((e, i) => {
+                const hasLots = e.lots && e.lots.length > 0;
+                return (
                 <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 relative group">
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => moveEtf(i, -1)} className="p-1 hover:bg-slate-700 rounded"><ArrowUp size={14}/></button>
-                    <button onClick={() => moveEtf(i, 1)} className="p-1 hover:bg-slate-700 rounded"><ArrowDown size={14}/></button>
+                    <button onClick={() => moveEtf(i, -1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowUp size={14}/></button>
+                    <button onClick={() => moveEtf(i, 1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowDown size={14}/></button>
+                    <button onClick={() => removeEtf(e.id)} className="p-1 hover:bg-slate-700 rounded text-red-400"><Trash2 size={14}/></button>
                   </div>
-                  <div className="flex justify-between items-center mb-2">
-                    <input type="text" value={e.name} onChange={v => updateEtf(i, 'name', v.target.value)} className="bg-transparent font-bold text-white w-2/3 outline-none border-b border-transparent focus:border-emerald-500"/>
-                    <span className="text-[10px] text-slate-500">融資: {formatMoney(e.marginLoanAmount)}</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div><label className="text-slate-500">股數</label><input type="number" value={e.shares} onChange={v => updateEtf(i, 'shares', Number(v.target.value))} className="w-full bg-slate-800 rounded p-1"/></div>
-                    <div><label className="text-slate-500">現價</label><input type="number" value={e.currentPrice} onChange={v => updateEtf(i, 'currentPrice', Number(v.target.value))} className="w-full bg-slate-800 rounded p-1"/></div>
-                    <div><label className="text-slate-500">配息</label><input type="number" value={e.dividendPerShare} onChange={v => updateEtf(i, 'dividendPerShare', Number(v.target.value))} className="w-full bg-slate-800 rounded p-1"/></div>
-                    <div className="text-center pt-4"><button onClick={() => removeEtf(e.id)} className="text-red-400"><Trash2 size={16}/></button></div>
+                  <input type="text" value={e.name} onChange={v => { const n = [...etfs]; n[i].name = v.target.value; setEtfs(n); }} className="bg-transparent font-bold text-white mb-2 outline-none w-2/3 border-b border-transparent focus:border-emerald-500"/>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><label className="text-slate-500">股數</label><div className="text-white pt-1">{e.shares.toLocaleString()}</div></div>
+                    <div><label className="text-slate-500">現價</label><input type="number" value={e.currentPrice} onChange={v => { const n = [...etfs]; n[i].currentPrice = Number(v.target.value); setEtfs(n); }} className="w-full bg-slate-800 rounded px-1 mt-1 border border-slate-700"/></div>
+                    <div><label className="text-slate-500">融資</label><div className="text-blue-300 pt-1">{formatMoney(e.marginLoanAmount)}</div></div>
                   </div>
                 </div>
-              ))}
-              <button onClick={() => setEtfs([...etfs, { id: Date.now().toString(), name: '新標的', code: '', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [1,4,7,10], category: 'dividend', marginLoanAmount: 0 }])} className="w-full py-2 border border-dashed border-slate-600 rounded-xl text-slate-500 hover:text-white">+ 新增標的</button>
+              )})}
+              <button onClick={() => setEtfs([...etfs, { id: Date.now().toString(), name: '新標的', code: '', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [1,4,7,10], category: 'dividend', marginLoanAmount: 0 }])} className="w-full py-2 border border-dashed border-slate-600 rounded-xl text-slate-500 hover:text-white transition-all">+ 新增標的</button>
             </div>
           </section>
         </div>
 
-        {/* Right Column */}
         <div className="xl:col-span-8 space-y-6">
            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg"><div className="text-slate-400 text-xs">年度淨流</div><div className={`text-2xl font-bold ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg"><div className="text-slate-400 text-xs">總資產</div><div className="text-2xl font-bold">{formatMoney(totalValue)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg"><div className="text-slate-400 text-xs">總負債</div><div className="text-2xl font-bold">{formatMoney(totalDebt)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg"><div className="text-slate-400 text-xs">維持率</div><div className="text-2xl font-bold">{maintenance === 999 ? "MAX" : maintenance.toFixed(1) + "%"}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">年度淨現金流</div><div className={`text-2xl font-bold ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總資產市值</div><div className="text-2xl font-bold">{formatMoney(totalValue)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總負債</div><div className="text-2xl font-bold">{formatMoney(totalStockDebt)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">維持率</div><div className="text-2xl font-bold">{maintenance === 999 ? "MAX" : maintenance.toFixed(1) + "%"}</div></div>
            </div>
 
-           {/* Cash Flow Table  */}
            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
-             <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Calendar className="text-blue-400"/> 每月現金流明細</h3>
+             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月現金流明細</h3>
              <table className="w-full text-sm text-left">
                <thead className="text-slate-500 bg-slate-900/50">
                  <tr><th className="p-3">月份</th><th className="p-3">股息</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3">稅金</th><th className="p-3 text-right">淨流</th></tr>
@@ -278,17 +304,16 @@ const App: React.FC = () => {
                    </tr>
                  ))}
                </tbody>
-               {/* ★★★ 年度總計列 ★★★ */}
                <tfoot>
                  <tr className="bg-slate-900 font-black text-white">
-                   <td className="p-3 rounded-bl-lg">年度總計</td>
+                   <td className="p-3">年度總計</td>
                    <td className="p-3 text-emerald-400">{formatMoney(totalDividend)}</td>
                    <td className="p-3 text-red-400">{formatMoney(totalMortgage)}</td>
                    <td className="p-3 text-orange-400">{formatMoney(totalCredit)}</td>
                    <td className="p-3 text-blue-300">{formatMoney(totalStockInterest)}</td>
                    <td className="p-3 text-slate-400">{formatMoney(totalLiving)}</td>
                    <td className="p-3 text-purple-400">{formatMoney(totalTax)}</td>
-                   <td className={`p-3 text-right rounded-br-lg ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
+                   <td className={`p-3 text-right ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
                  </tr>
                </tfoot>
              </table>
@@ -300,11 +325,12 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 w-full max-w-lg shadow-2xl">
             <h3 className="text-xl font-bold mb-4 text-white">⚙️ 系統設定</h3>
-            <div className="space-y-4">
-              <div><label className="text-xs text-slate-400">Google Sheet CSV 連結</label><input type="text" value={cloudConfig.priceSourceUrl} onChange={e => setCloudConfig({...cloudConfig, priceSourceUrl: e.target.value})} className="w-full bg-slate-900 p-2 rounded mt-1 border border-slate-600"/></div>
-              <div className="p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg text-xs text-emerald-300">
-                <p>已連接 Firebase 路徑: portfolios / tony1006</p>
-              </div>
+            <div className="space-y-4 text-sm">
+                <div><label className="text-slate-400">總投資預算</label><input type="number" value={allocation.totalFunds} onChange={e => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded mt-1 border border-slate-600"/></div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div><label className="text-slate-400">配息比例 %</label><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded mt-1 border border-slate-600"/></div>
+                    <div><label className="text-slate-400">避險比例 %</label><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded mt-1 border border-slate-600"/></div>
+                </div>
             </div>
             <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-2 bg-blue-600 rounded-lg font-bold">儲存並關閉</button>
           </div>
