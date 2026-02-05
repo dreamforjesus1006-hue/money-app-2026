@@ -2,6 +2,10 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, PieChart, Pie, Cell, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar, Lightbulb, CheckCircle2, HelpCircle, Edit3, ArrowRightLeft, Plus, ArrowUp, ArrowDown, Wifi, WifiOff } from 'lucide-react';
 
+// --- Firebase SDK ---
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+
 // ==========================================
 // 1. Firebase 設定 (已為您填入鑰匙)
 // ==========================================
@@ -14,8 +18,8 @@ const YOUR_FIREBASE_CONFIG = {
   appId: "1:674257527078:web:80018b440a826c2ef061e7"
 };
 
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+const COLLECTION_NAME = "portfolios";
+const DOCUMENT_ID = "tony1006";
 
 // ==========================================
 // 2. 核心定義與介面
@@ -27,15 +31,12 @@ interface StockLoan { principal: number; rate: number; maintenanceLimit?: number
 interface CreditLoan { principal: number; rate: number; totalMonths: number; paidMonths: number; }
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
-interface CloudConfig { enabled: boolean; priceSourceUrl?: string; }
-interface AppState { etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; globalMarginLoan: StockLoan; creditLoan: CreditLoan; taxStatus: TaxStatus; allocation: AllocationConfig; }
 
 const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7', cash: '#334155' };
-const THEMES = { default: { border: 'border-emerald-500' } };
 
 // ==========================================
-// 3. 工具計算函數
+// 3. 工具與計算
 // ==========================================
 const formatMoney = (val: any) => `$${Math.floor(Number(val) || 0).toLocaleString()}`;
 
@@ -55,7 +56,7 @@ const recalculateEtfStats = (etf: ETF): ETF => {
     return { ...etf, shares: totalShares, costPrice: totalShares > 0 ? Number((totalCost / totalShares).toFixed(2)) : 0, marginLoanAmount: totalMargin };
 };
 
-const generateCashFlow = (etfs: ETF[], loans: any[], stockLoan: any, creditLoan: any, globalMarginLoan: any, taxStatus: any) => {
+const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, creditLoan: CreditLoan, globalMarginLoan: StockLoan, taxStatus: TaxStatus) => {
     const flows = [];
     for (let m = 1; m <= 12; m++) {
         let divIn = 0;
@@ -77,20 +78,13 @@ const generateCashFlow = (etfs: ETF[], loans: any[], stockLoan: any, creditLoan:
     return flows;
 };
 
-// ==========================================
-// 4. Firebase 初始化與定位
-// ==========================================
+// --- Firebase Init ---
 let db: any = null;
-const isFirebaseConfigured = true; 
-try { const app = initializeApp(YOUR_FIREBASE_CONFIG); db = getFirestore(app); } catch(e) { console.error(e); }
-
-const STORAGE_KEY = 'baozutang_v47';
-const COLLECTION_NAME = "portfolios";
-const DOCUMENT_ID = "tony1006";
+try { const firebaseApp = initializeApp(YOUR_FIREBASE_CONFIG); db = getFirestore(firebaseApp); } catch(e) { console.error(e); }
 
 const StorageService = {
     saveData: async (data: any) => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem('baozutang_local', JSON.stringify(data));
         if (db) await setDoc(doc(db, COLLECTION_NAME, DOCUMENT_ID), data);
         return true;
     },
@@ -99,13 +93,13 @@ const StorageService = {
             const snap = await getDoc(doc(db, COLLECTION_NAME, DOCUMENT_ID));
             if (snap.exists()) return { data: snap.data(), source: 'cloud' };
         }
-        const local = localStorage.getItem(STORAGE_KEY);
+        const local = localStorage.getItem('baozutang_local');
         return local ? { data: JSON.parse(local), source: 'local' } : { data: null, source: 'none' };
     }
 };
 
 // ==========================================
-// 5. App 主程式
+// 4. App 主程式
 // ==========================================
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -160,8 +154,8 @@ const App: React.FC = () => {
   const totalNet = useMemo(() => monthlyFlows.reduce((a, b) => a + b.net, 0), [monthlyFlows]);
 
   const totalValue = etfs.reduce((a, e) => a + (e.shares * e.currentPrice), 0);
-  const totalDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((a, e) => a + (e.marginLoanAmount || 0), 0);
-  const maintenance = totalDebt === 0 ? 999 : (totalValue / totalDebt) * 100;
+  const totalStockDebt = stockLoan.principal + globalMarginLoan.principal + etfs.reduce((a, e) => a + (e.marginLoanAmount || 0), 0);
+  const maintenance = totalStockDebt === 0 ? 999 : (totalValue / totalStockDebt) * 100;
   
   const actualDiv = etfs.filter(e => e.category === 'dividend').reduce((a, e) => a + (e.shares * e.currentPrice) - (e.marginLoanAmount || 0), 0);
   const actualHedge = etfs.filter(e => e.category === 'hedging').reduce((a, e) => a + (e.shares * e.currentPrice) - (e.marginLoanAmount || 0), 0);
@@ -169,16 +163,14 @@ const App: React.FC = () => {
 
   const radarData = [
     { subject: '現金流', A: Math.min(100, (totalDividend / (totalMortgage + totalCredit + totalStockInterest + totalLiving || 1)) * 100) },
-    { subject: '安全性', A: Math.min(100, (actualHedge / (totalValue - totalDebt || 1)) * 500) },
-    { subject: '成長性', A: Math.min(100, (actualAct / (totalValue - totalDebt || 1)) * 500) },
+    { subject: '安全性', A: Math.min(100, (actualHedge / (totalValue - totalStockDebt || 1)) * 500) },
+    { subject: '成長性', A: Math.min(100, (actualAct / (totalValue - totalStockDebt || 1)) * 500) },
     { subject: '抗壓性', A: Math.min(100, (maintenance - 130) * 2) },
   ];
 
   const updateEtf = (i: number, f: string, v: any) => { const n = [...etfs]; (n[i] as any)[f] = v; setEtfs(n); };
   const moveEtf = (i: number, d: number) => { const n = [...etfs]; if(i+d < 0 || i+d >= n.length) return; [n[i], n[i+d]] = [n[i+d], n[i]]; setEtfs(n); };
   const removeEtf = (id: string) => { if (confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
-  const toggleLots = (id: string) => setExpandedEtfId(expandedEtfId === id ? null : id);
-  const toggleBuy = (id: string) => setActiveBuyId(activeBuyId === id ? null : id);
   
   const submitBuy = (i: number) => {
     const s = Number(buyForm.shares), p = Number(buyForm.price), m = Number(buyForm.margin); if (!s || !p) return;
@@ -197,7 +189,7 @@ const App: React.FC = () => {
     setEtfs(newEtfs);
   };
 
-  if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-sans"><Loader2 className="animate-spin mr-2"/> 雲端同步中...</div>;
+  if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2"/> 雲端同步中...</div>;
 
   return (
     <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans">
@@ -224,8 +216,8 @@ const App: React.FC = () => {
               {etfs.map((e, i) => (
                 <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 relative group">
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => moveEtf(i, -1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowUp size={14}/></button><button onClick={() => moveEtf(i, 1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowDown size={14}/></button><button onClick={() => removeEtf(e.id)} className="p-1 hover:bg-slate-700 rounded text-red-400"><Trash2 size={14}/></button></div>
-                  <div className="flex justify-between items-center mb-2"><input type="text" value={e.name} onChange={v => updateEtf(i, 'name', v.target.value)} className="bg-transparent font-bold text-white w-2/3 outline-none"/><div className="flex gap-1"><button onClick={() => toggleBuy(e.id)} className="p-1 rounded bg-slate-800"><ShoppingCart size={12}/></button><button onClick={() => toggleLots(e.id)} className="p-1 rounded bg-slate-800"><List size={12}/></button></div></div>
-                  {activeBuyId === e.id && (<div className="mb-3 p-3 bg-emerald-900/20 rounded-lg"><div className="grid grid-cols-2 gap-2 mb-2"><input type="number" placeholder="股數" value={buyForm.shares} onChange={v => setBuyForm({...buyForm, shares: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="單價" value={buyForm.price} onChange={v => setBuyForm({...buyForm, price: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="融資額" value={buyForm.margin} onChange={v => setBuyForm({...buyForm, margin: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="date" value={buyForm.date} onChange={v => setBuyForm({...buyForm, date: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/></div><button onClick={() => submitBuy(i)} className="w-full bg-emerald-600 text-xs py-1 rounded">確認</button></div>)}
+                  <div className="flex justify-between items-center mb-2"><input type="text" value={e.name} onChange={v => updateEtf(i, 'name', v.target.value)} className="bg-transparent font-bold text-white w-2/3 outline-none"/><div className="flex gap-1"><button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><ShoppingCart size={12}/></button><button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><List size={12}/></button></div></div>
+                  {activeBuyId === e.id && (<div className="mb-3 p-3 bg-emerald-900/20 rounded-lg"><div className="grid grid-cols-2 gap-2 mb-2"><input type="number" placeholder="股數" value={buyForm.shares} onChange={v => setBuyForm({...buyForm, shares: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="單價" value={buyForm.price} onChange={v => setBuyForm({...buyForm, price: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="融資額" value={buyForm.margin} onChange={v => setBuyForm({...buyForm, margin: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="date" value={buyForm.date} onChange={v => setBuyForm({...buyForm, date: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/></div><button onClick={() => submitBuy(i)} className="w-full bg-emerald-600 text-xs py-1 rounded">確認買入</button></div>)}
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div><label className="text-slate-500">股數</label><div className="text-white pt-1">{e.shares.toLocaleString()}</div></div>
                     <div><label className="text-slate-500">現價</label><input type="number" value={e.currentPrice} onChange={v => updateEtf(i, 'currentPrice', Number(v.target.value))} className="w-full bg-slate-800 rounded p-1 border border-slate-700 mt-1"/></div>
@@ -243,7 +235,7 @@ const App: React.FC = () => {
            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
              <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500"><div className="text-slate-400 text-xs">年度淨流</div><div className={`text-2xl font-bold ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</div></div>
              <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500"><div className="text-slate-400 text-xs">總資產</div><div className="text-2xl font-bold">{formatMoney(totalValue)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500"><div className="text-slate-400 text-xs">總負債</div><div className="text-2xl font-bold">{formatMoney(totalDebt)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500"><div className="text-slate-400 text-xs">總負債</div><div className="text-2xl font-bold">{formatMoney(totalStockDebt)}</div></div>
              <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500"><div className="text-slate-400 text-xs">維持率</div><div className="text-2xl font-bold">{maintenance === 999 ? "MAX" : maintenance.toFixed(1) + "%"}</div></div>
            </div>
 
