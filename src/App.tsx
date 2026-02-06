@@ -7,7 +7,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 // ==========================================
-// 1. Firebase 設定
+// 1. Firebase 設定 (baozutang-finance)
 // ==========================================
 const YOUR_FIREBASE_CONFIG = {
   apiKey: "AIzaSyCM42AelwEWTC4R_V0sgF0FbomkoXdE4T0",
@@ -22,7 +22,7 @@ const COLLECTION_NAME = "portfolios";
 const DOCUMENT_ID = "tony1006";
 
 // ==========================================
-// 2. 定義介面
+// 2. 定義介面 (Interfaces)
 // ==========================================
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
 interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
@@ -37,7 +37,7 @@ const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7' };
 
 // ==========================================
-// 3. 計算工具
+// 3. 計算工具 (Tools)
 // ==========================================
 const formatMoney = (val: any) => `$${Math.floor(Number(val) || 0).toLocaleString()}`;
 
@@ -104,7 +104,7 @@ const StorageService = {
 };
 
 // ==========================================
-// 4. App 主程式
+// 4. App 主程式 (Main)
 // ==========================================
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -130,6 +130,7 @@ const App: React.FC = () => {
   const [buyForm, setBuyForm] = useState({ shares: '', price: '', date: '', margin: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Load Data
   useEffect(() => {
     StorageService.loadData().then(res => {
       setDataSrc(res.source);
@@ -144,6 +145,7 @@ const App: React.FC = () => {
     });
   }, []);
 
+  // Auto-Save
   useEffect(() => {
     if (isInitializing) return;
     setSaveStatus('saving');
@@ -155,12 +157,13 @@ const App: React.FC = () => {
     return () => clearTimeout(t);
   }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, isInitializing]);
 
+  // Calculations
   const monthlyFlows = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus]);
   const totalDividend = monthlyFlows.reduce((a, b) => a + b.divIn, 0);
   const totalMortgage = monthlyFlows.reduce((a, b) => a + b.loanOut, 0);
   const totalCredit = monthlyFlows.reduce((a, b) => a + b.creditOut, 0);
   const totalStockInterest = monthlyFlows.reduce((a, b) => a + b.stockInt, 0);
-  const totalLiving = monthlyFlows.reduce((a, b) => a + b.life, 0);
+  const totalLiving = monthlyFlows.reduce((a, b) => a + (b.life), 0);
   const totalNet = monthlyFlows.reduce((a, b) => a + b.net, 0);
 
   const totalValue = etfs.reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)), 0);
@@ -174,6 +177,7 @@ const App: React.FC = () => {
   const combatPower = Math.floor((totalValue/10000) + (totalDividend/12/100));
   const fireRatio = totalDividend / (totalMortgage + totalCredit + totalStockInterest + totalLiving || 1) * 100;
 
+  // Chart Data
   const pieData = [
     { name: '配息', value: Math.max(0, actualDiv), color: COLORS.dividend },
     { name: '避險', value: Math.max(0, actualHedge), color: COLORS.hedging },
@@ -183,7 +187,7 @@ const App: React.FC = () => {
   const radarData = [
     { subject: '現金流', A: Math.min(100, fireRatio) },
     { subject: '安全性', A: Math.min(100, (actualHedge / (totalValue - totalStockDebt || 1)) * 500) },
-    { subject: '抗壓性', A: Math.min(100, (currentMaintenance - 130) * 2) },
+    { subject: '維持率', A: Math.min(100, (currentMaintenance - 130) * 2) },
     { subject: '成長', A: Math.min(100, (actualAct / (totalValue - totalStockDebt || 1)) * 500) },
   ];
 
@@ -225,13 +229,13 @@ const App: React.FC = () => {
     } catch (e) { alert('更新失敗'); } finally { setIsUpdatingPrices(false); }
   };
 
-  if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-sans"><Loader2 className="animate-spin mr-2"/> 雲端連線中...</div>;
+  if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-sans"><Loader2 className="animate-spin mr-2"/> 雲端同步中...</div>;
 
   return (
     <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans">
       <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室</h1>
+          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V60</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400"/> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400"/> : <WifiOff size={12} className="text-slate-500"/>}
@@ -263,7 +267,7 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-3 gap-4 mt-4">
                     <div><div className="text-slate-500 text-[10px]">戰鬥力</div><div className="font-mono font-bold">{combatPower.toLocaleString()}</div></div>
                     <div><div className="text-slate-500 text-[10px]">維持率</div><div className={currentMaintenance < 140 ? "text-red-400 font-bold" : "text-emerald-400 font-bold"}>{currentMaintenance === 999 ? 'MAX' : currentMaintenance.toFixed(0)+'%'}</div></div>
-                    <div><div className="text-slate-500 text-[10px]">FIRE%</div><div className="text-orange-400 font-bold">{fireRatio.toFixed(1)}%</div></div>
+                    <div><div className="text-slate-500 text-[10px]">FIRE%</div><div className="text-orange-400 font-bold font-mono">{fireRatio.toFixed(1)}%</div></div>
                 </div>
             </div>
 
@@ -281,8 +285,8 @@ const App: React.FC = () => {
                 </div>
             </section>
 
-            <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700">
-                <h2 className="text-lg font-bold mb-4 text-emerald-400 flex items-center gap-2"><Activity/> 標的清單</h2>
+            <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
+                <h2 className="text-lg font-bold mb-4 text-emerald-300 flex items-center gap-2"><Activity/> 標的清單</h2>
                 <div className="space-y-4">
                   {etfs.map((e, idx) => (
                     <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 relative group">
@@ -302,14 +306,14 @@ const App: React.FC = () => {
         {/* Right Column */}
         <div className="xl:col-span-8 space-y-6">
            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">年度淨流</div><div className={`text-2xl font-bold ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總資產</div><div className="text-2xl font-bold">{formatMoney(totalValue)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總負債</div><div className="text-2xl font-bold">{formatMoney(totalDebt)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">維持率</div><div className="text-2xl font-bold">{currentMaintenance === 999 ? "MAX" : currentMaintenance.toFixed(1) + "%"}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg"><div className="text-slate-400 text-xs uppercase font-bold">年度淨流</div><div className={`text-2xl font-bold ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg"><div className="text-slate-400 text-xs uppercase font-bold">總資產</div><div className="text-2xl font-bold font-mono">{formatMoney(totalValue)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg"><div className="text-slate-400 text-xs uppercase font-bold">總負債</div><div className="text-2xl font-bold font-mono">{formatMoney(totalStockDebt)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg"><div className="text-slate-400 text-xs uppercase font-bold">維持率</div><div className="text-2xl font-bold font-mono">{currentMaintenance === 999 ? "MAX" : currentMaintenance.toFixed(1) + "%"}</div></div>
            </div>
 
            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
-                <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold flex items-center gap-2 text-white"><TrendingUp className="text-indigo-400"/> 十年財富滾雪球</h3><div className="flex bg-slate-900 rounded-lg p-1 border border-slate-600"><button onClick={()=>setReinvest(false)} className={`px-3 py-1 text-xs rounded ${!reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>花掉股息</button><button onClick={()=>setReinvest(true)} className={`px-3 py-1 text-xs rounded ${reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>複利投入</button></div></div>
+                <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold flex items-center gap-2 text-white"><TrendingUp className="text-indigo-400"/> 十年財富滾雪球</h3><div className="flex bg-slate-900 rounded-lg p-1 border border-slate-600"><button onClick={()=>setReinvest(false)} className={`px-3 py-1 text-xs rounded transition-all ${!reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>花掉股息</button><button onClick={()=>setReinvest(true)} className={`px-3 py-1 text-xs rounded transition-all ${reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>複利投入</button></div></div>
                 <div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={snowballData}><defs><linearGradient id="cw" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.8}/><stop offset="95%" stopColor="#818cf8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="year" stroke="#94a3b8"/><YAxis stroke="#94a3b8"/><Tooltip formatter={(v:number)=>formatMoney(v)}/><Area type="monotone" dataKey="wealth" stroke="#818cf8" fill="url(#cw)" /></AreaChart></ResponsiveContainer></div>
            </div>
 
@@ -317,9 +321,11 @@ const App: React.FC = () => {
              <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月現金流明細</h3>
              <table className="w-full text-sm text-left"><thead className="text-slate-500 bg-slate-900/50"><tr><th className="p-3">月份</th><th className="p-3">股息</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3 text-right">淨流</th></tr></thead>
                <tbody>{monthlyFlows.map(r => (<tr key={r.month} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                     <td className="p-3 font-bold">{r.month}月</td><td className="p-3 text-emerald-400 font-mono">{formatMoney(r.divIn)}</td><td className="p-3 text-red-400 font-mono">{formatMoney(r.loanOut)}</td><td className="p-3 text-orange-400 font-mono">{formatMoney(r.creditOut)}</td><td className="p-3 text-blue-300 font-mono">{formatMoney(r.stockInt)}</td><td className={`p-3 text-right font-bold ${r.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
+                     <td className="p-3 font-bold">{r.month}月</td><td className="p-3 text-emerald-400 font-mono">{formatMoney(r.divIn)}</td><td className="p-3 text-red-400 font-mono">{formatMoney(r.loanOut)}</td><td className="p-3 text-orange-400 font-mono">{formatMoney(r.creditOut)}</td><td className="p-3 text-blue-300 font-mono">{formatMoney(r.stockInt)}</td><td className={`p-3 text-right font-bold font-mono ${r.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
                    </tr>))}</tbody>
-               <tfoot><tr className="bg-slate-900 font-black text-white"><td className="p-3">年度總計</td><td className="p-3 text-emerald-400">{formatMoney(totalDividend)}</td><td className="p-3 text-red-400">{formatMoney(totalMortgage)}</td><td className="p-3 text-orange-400">{formatMoney(totalCredit)}</td><td className="p-3 text-blue-300">{formatMoney(totalStockInterest)}</td><td className={`p-3 text-right ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td></tr></tfoot>
+               <tfoot><tr className="bg-slate-900 font-black text-white">
+                   <td className="p-3">年度總計</td><td className="p-3 text-emerald-400 font-mono">{formatMoney(totalDividend)}</td><td className="p-3 text-red-400 font-mono">{formatMoney(totalMortgage)}</td><td className="p-3 text-orange-400 font-mono">{formatMoney(totalCredit)}</td><td className="p-3 text-blue-300 font-mono">{formatMoney(totalStockInterest)}</td><td className={`p-3 text-right font-mono ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
+               </tr></tfoot>
              </table>
            </div>
         </div>
@@ -343,8 +349,8 @@ const App: React.FC = () => {
                     <div key={l.id} className="mb-4 p-3 bg-slate-900 rounded-xl border border-slate-700">
                         <div className="grid grid-cols-2 gap-3 mb-2"><input type="text" value={l.name} onChange={e => updateLoan(i, 'name', e.target.value)} className="w-full bg-slate-800 p-1 rounded border border-slate-700" placeholder="名稱"/><input type="number" value={l.principal} onChange={e => updateLoan(i, 'principal', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded border border-slate-700" placeholder="本金"/></div>
                         <div className="grid grid-cols-2 gap-3 mb-2">
-                            <div><label className="text-[10px] text-emerald-500">核貸日期</label><input type="date" value={l.startDate || ''} onChange={e => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-800 p-1 rounded"/></div>
-                            <div><label className="text-[10px] text-slate-500">已繳(手動)</label><input type="number" value={l.paidMonths} onChange={e => updateLoan(i, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
+                            <div><label className="text-[10px] text-emerald-500 font-bold">核貸日期 (自動算已繳)</label><input type="date" value={l.startDate || ''} onChange={e => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-800 p-1 rounded border border-emerald-900/50"/></div>
+                            <div><label className="text-[10px] text-slate-500">已繳期數 (手動覆蓋)</label><input type="number" value={l.paidMonths} onChange={e => updateLoan(i, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                             <div><label className="text-[10px] text-slate-500">利率1%</label><input type="number" value={l.rate1} onChange={e => updateLoan(i, 'rate1', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
@@ -357,16 +363,16 @@ const App: React.FC = () => {
                         </div>
                     </div>
                   ))}
-                  <button onClick={() => setLoans([...loans, {id:Date.now().toString(), name:'新房貸', principal:0, rate1:2.1, rate1Months:36, rate2:2.3, totalMonths:360, paidMonths:0, gracePeriod:0, type:'PrincipalAndInterest'}])} className="text-xs text-blue-400">+ 新增</button>
+                  <button onClick={() => setLoans([...loans, {id:Date.now().toString(), name:'新房貸', principal:0, rate1:2.1, rate1Months:36, rate2:2.3, totalMonths:360, paidMonths:0, gracePeriod:0, type:'PrincipalAndInterest'}])} className="text-xs text-blue-400 hover:underline">+ 新增</button>
                 </div>
 
                 <div className="pt-4 border-t border-slate-700 grid grid-cols-2 gap-4">
                     <div><h4 className="text-blue-400 font-bold mb-2">信貸</h4><input type="number" value={creditLoan.principal} onChange={e => setCreditLoan({...creditLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700 mb-1" placeholder="本金"/><input type="number" value={creditLoan.rate} onChange={e => setCreditLoan({...creditLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700" placeholder="利率%"/></div>
-                    <div><h4 className="text-amber-400 font-bold mb-2">不限用途/質押</h4><input type="number" value={stockLoan.principal} onChange={e => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700 mb-1" placeholder="本金"/><input type="number" value={stockLoan.rate} onChange={e => setStockLoan({...stockLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700" placeholder="利率%"/></div>
+                    <div><h4 className="text-amber-400 font-bold mb-2">不限用途借貸/質押</h4><input type="number" value={stockLoan.principal} onChange={e => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700 mb-1" placeholder="本金"/><input type="number" value={stockLoan.rate} onChange={e => setStockLoan({...stockLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700" placeholder="利率%"/></div>
                 </div>
                 <div className="pt-4 border-t border-slate-700"><label className="text-slate-400">生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={e => setTaxStatus({...taxStatus, livingExpenses: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded border border-slate-600"/></div>
             </div>
-            <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-2 bg-blue-600 rounded-lg font-bold">儲存關閉</button>
+            <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-2 bg-blue-600 rounded-lg font-bold shadow-lg hover:bg-blue-500 transition-all">儲存並關閉</button>
           </div>
         </div>
       )}
