@@ -79,7 +79,7 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     return flows;
 };
 
-// --- Firebase Init ---
+// --- Firebase ---
 let db: any = null;
 try { const firebaseApp = initializeApp(YOUR_FIREBASE_CONFIG); db = getFirestore(firebaseApp); } catch(e) { console.error(e); }
 
@@ -162,17 +162,41 @@ const App: React.FC = () => {
   const totalLiving = monthlyFlows.reduce((a, b) => a + (b.life), 0);
   const totalNet = monthlyFlows.reduce((a, b) => a + b.net, 0);
 
-  const totalMarketValue = etfs.reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)), 0);
-  const totalStockDebt = Number(stockLoan.principal) + Number(globalMarginLoan.principal) + etfs.reduce((a, e) => a + (Number(e.marginLoanAmount) || 0), 0);
-  const currentMaintenance = totalStockDebt === 0 ? 999 : (totalMarketValue / totalStockDebt) * 100;
+  const totalValue = etfs.reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)), 0);
+  const totalDebt = Number(stockLoan.principal) + Number(globalMarginLoan.principal) + etfs.reduce((a, e) => a + (Number(e.marginLoanAmount) || 0), 0);
+  const currentMaintenance = totalDebt === 0 ? 999 : (totalValue / totalDebt) * 100;
   
   const actualDiv = etfs.filter(e => e.category === 'dividend').reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)) - (Number(e.marginLoanAmount) || 0), 0);
   const actualHedge = etfs.filter(e => e.category === 'hedging').reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)) - (Number(e.marginLoanAmount) || 0), 0);
   const actualAct = etfs.filter(e => e.category === 'active').reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)) - (Number(e.marginLoanAmount) || 0), 0);
 
+  const handleUpdatePrices = async () => {
+    if (!cloudConfig.priceSourceUrl) { alert('請輸入連結！'); setShowSettings(true); return; }
+    setIsUpdatingPrices(true);
+    try {
+        const res = await fetch(cloudConfig.priceSourceUrl);
+        const text = await res.text();
+        const rows = text.split('\n').map(r => r.split(','));
+        const priceMap = new Map<string, number>();
+        rows.forEach(row => { if (row.length >= 2) { const code = row[0].trim(); const price = parseFloat(row[1].trim()); if (code && !isNaN(price)) priceMap.set(code, price); } });
+        setEtfs(prev => prev.map(e => priceMap.has(e.code || e.id) ? { ...e, currentPrice: priceMap.get(e.code || e.id)! } : e));
+        alert('行情更新成功！');
+    } catch (e) { alert('更新失敗'); } finally { setIsUpdatingPrices(false); }
+  };
+
   const moveEtf = (i: number, d: number) => { const n = [...etfs]; if(i+d < 0 || i+d >= n.length) return; [n[i], n[i+d]] = [n[i+d], n[i]]; setEtfs(n); };
   const removeEtf = (id: string) => { if (confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
-  const updateLoan = (i: number, f: string, v: any) => { const n = [...loans]; (n[i] as any)[f] = v; setLoans(n); };
+  const updateLoan = (i: number, f: string, v: any) => { 
+      const n = [...loans]; 
+      if (f === 'startDate' && v) {
+          const start = new Date(v); const now = new Date();
+          let diffMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+          n[i] = { ...n[i], startDate: v, paidMonths: Math.max(0, diffMonths) };
+      } else {
+          (n[i] as any)[f] = v;
+      }
+      setLoans(n); 
+  };
 
   if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-sans"><Loader2 className="animate-spin mr-2"/> 雲端同步中...</div>;
 
@@ -189,15 +213,16 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
-            <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded border border-slate-700"><Settings size={18}/></button>
+            <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded border border-slate-700 text-emerald-400 hover:bg-emerald-900/30 transition-all">{isUpdatingPrices ? <Loader2 className="animate-spin" size={18}/> : <RefreshCw size={18}/>}</button>
+            <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded border border-slate-700 hover:bg-slate-700 transition-all"><Settings size={18}/></button>
             <input type="file" ref={fileInputRef} onChange={(e) => {
                 const f = e.target.files?.[0]; if(!f) return;
                 const r = new FileReader(); r.onload = (ev) => {
-                    try { const d = JSON.parse(ev.target?.result as string); if(d.etfs) { setEtfs(d.etfs); if(d.loans) setLoans(d.loans); setTaxStatus(d.taxStatus); setAllocation(d.allocation); alert('匯入成功'); } } catch(e) { alert('格式錯誤'); }
+                    try { const d = JSON.parse(ev.target?.result as string); if(d.etfs) { setEtfs(d.etfs); if(d.loans) setLoans(d.loans); setTaxStatus(d.taxStatus); setAllocation(d.allocation); if(d.cloudConfig) setCloudConfig(d.cloudConfig); alert('匯入成功'); } } catch(e) { alert('格式錯誤'); }
                 }; r.readAsText(f);
             }} className="hidden" accept=".json"/>
-            <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-slate-800 rounded border border-slate-700 text-blue-400"><Upload size={18}/></button>
-            <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation })} className="p-2 bg-slate-800 rounded border border-slate-700 text-amber-400"><Download size={18}/></button>
+            <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-slate-800 rounded border border-slate-700 text-blue-400 hover:bg-blue-900/30 transition-all"><Upload size={18}/></button>
+            <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig })} className="p-2 bg-slate-800 rounded border border-slate-700 text-amber-400 hover:bg-amber-900/30 transition-all"><Download size={18}/></button>
         </div>
       </header>
 
@@ -222,7 +247,7 @@ const App: React.FC = () => {
                     <div className="relative"><input type="text" value={e.code || ''} onChange={v => { const n=[...etfs]; n[idx].code=v.target.value; setEtfs(n); }} className="absolute -top-5 left-0 text-[10px] text-slate-500 bg-slate-800 px-1 rounded w-16" placeholder="代號"/><input type="text" value={e.name} onChange={v => { const n=[...etfs]; n[idx].name=v.target.value; setEtfs(n); }} className="bg-transparent font-bold text-white outline-none w-full"/></div>
                     <div className="flex gap-1"><button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><ShoppingCart size={14}/></button><button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><List size={14}/></button></div>
                   </div>
-                  {activeBuyId === e.id && (<div className="mb-3 p-3 bg-emerald-900/20 rounded-lg"><div className="grid grid-cols-2 gap-2 mb-2"><input type="number" placeholder="股數" value={buyForm.shares} onChange={v => setBuyForm({...buyForm, shares: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="單價" value={buyForm.price} onChange={v => setBuyForm({...buyForm, price: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="融資額" value={buyForm.margin} onChange={v => setBuyForm({...buyForm, margin: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="date" value={buyForm.date} onChange={v => setBuyForm({...buyForm, date: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/></div><button onClick={() => { const s = Number(buyForm.shares), p = Number(buyForm.price), m = Number(buyForm.margin); if (!s || !p) return; const nEtfs = [...etfs]; const current = nEtfs[idx]; const newLot = { id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee: Math.floor(s*p*BROKERAGE_RATE), margin: m }; const updatedLots = current.lots ? [...current.lots, newLot] : [newLot]; nEtfs[idx] = recalculateEtfStats({ ...current, lots: updatedLots }); setEtfs(nEtfs); setBuyForm({ shares: '', price: '', date: '', margin: '' }); setActiveBuyId(null); }} className="w-full bg-emerald-600 text-xs py-1 rounded font-bold">確認買入</button></div>)}
+                  {activeBuyId === e.id && (<div className="mb-3 p-3 bg-emerald-900/20 rounded-lg"><div className="grid grid-cols-2 gap-2 mb-2"><input type="number" placeholder="股數" value={buyForm.shares} onChange={v => setBuyForm({...buyForm, shares: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="單價" value={buyForm.price} onChange={v => setBuyForm({...buyForm, price: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="融資額" value={buyForm.margin} onChange={v => setBuyForm({...buyForm, margin: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="date" value={buyForm.date} onChange={v => setBuyForm({...buyForm, date: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/></div><button onClick={() => { const s = Number(buyForm.shares), p = Number(buyForm.price), m = Number(buyForm.margin); if (!s || !p) return; const nEtfs = [...etfs]; const current = nEtfs[idx]; const newLot = { id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee: Math.floor(s*p*BROKERAGE_RATE), margin: m }; const updatedLots = current.lots ? [...current.lots, newLot] : [newLot]; nEtfs[idx] = recalculateEtfStats({ ...current, lots: updatedLots }); setEtfs(nEtfs); setBuyForm({ shares: '', price: '', date: '', margin: '' }); setActiveBuyId(null); }} className="w-full bg-emerald-600 text-xs py-1 rounded font-bold">確認交易</button></div>)}
                   <div className="grid grid-cols-3 gap-2 text-xs mb-2">
                     <div><label className="text-slate-500">股數</label><div className="pt-1 font-mono">{e.shares.toLocaleString()}</div></div>
                     <div><label className="text-slate-500">現價</label><input type="number" value={e.currentPrice} onChange={v => { const n=[...etfs]; n[idx].currentPrice=Number(v.target.value); setEtfs(n); }} className="w-full bg-slate-800 rounded p-1 border border-slate-700 mt-1"/></div>
@@ -240,8 +265,8 @@ const App: React.FC = () => {
         <div className="xl:col-span-8 space-y-6">
            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
              <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">年度淨流</div><div className={`text-2xl font-bold ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總資產</div><div className="text-2xl font-bold">{formatMoney(totalMarketValue)}</div></div>
-             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總負債</div><div className="text-2xl font-bold">{formatMoney(totalStockDebt)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總資產</div><div className="text-2xl font-bold">{formatMoney(totalValue)}</div></div>
+             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">總負債</div><div className="text-2xl font-bold">{formatMoney(totalDebt)}</div></div>
              <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg"><div className="text-slate-400 text-xs uppercase">維持率</div><div className="text-2xl font-bold">{currentMaintenance === 999 ? "MAX" : currentMaintenance.toFixed(1) + "%"}</div></div>
            </div>
 
@@ -270,6 +295,7 @@ const App: React.FC = () => {
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
             <h3 className="text-xl font-bold mb-4 text-white flex items-center gap-2"><Settings/> 財務設定</h3>
             <div className="space-y-6 text-sm">
+                <div><label className="text-slate-400 block mb-1">Google Sheet CSV 連結 (更新行情用)</label><input type="text" value={cloudConfig.priceSourceUrl} onChange={e => setCloudConfig({...cloudConfig, priceSourceUrl: e.target.value})} className="w-full bg-slate-900 p-2 rounded border border-slate-600 outline-none focus:border-blue-500" placeholder="https://..."/></div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div><label className="text-slate-400">投資預算</label><input type="number" value={allocation.totalFunds} onChange={e => setAllocation({...allocation, totalFunds: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded border border-slate-600"/></div>
                     <div><label className="text-slate-400">配息%</label><input type="number" value={allocation.dividendRatio} onChange={e => setAllocation({...allocation, dividendRatio: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded border border-slate-600"/></div>
@@ -284,19 +310,22 @@ const App: React.FC = () => {
                             <input type="text" value={l.name} onChange={e => updateLoan(i, 'name', e.target.value)} className="w-full bg-slate-800 p-1 rounded border border-slate-700" placeholder="名稱"/>
                             <input type="number" value={l.principal} onChange={e => updateLoan(i, 'principal', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded border border-slate-700" placeholder="本金"/>
                         </div>
+                        <div className="grid grid-cols-2 gap-3 mb-2">
+                            <div><label className="text-[10px] text-emerald-500">核貸/撥款日期 (自動算已繳)</label><input type="date" value={l.startDate || ''} onChange={e => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-800 p-1 rounded border border-emerald-900/50"/></div>
+                            <div><label className="text-[10px] text-slate-500">已繳期數 (可手動蓋過)</label><input type="number" value={l.paidMonths} onChange={e => updateLoan(i, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded border border-slate-700"/></div>
+                        </div>
                         <div className="grid grid-cols-3 gap-2">
                             <div><label className="text-[10px] text-slate-500">利率1%</label><input type="number" value={l.rate1} onChange={e => updateLoan(i, 'rate1', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                             <div><label className="text-[10px] text-slate-500">利率1月數</label><input type="number" value={l.rate1Months} onChange={e => updateLoan(i, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                             <div><label className="text-[10px] text-slate-500">利率2%</label><input type="number" value={l.rate2} onChange={e => updateLoan(i, 'rate2', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 mt-2">
+                        <div className="grid grid-cols-2 gap-2 mt-2">
                             <div><label className="text-[10px] text-slate-500">總期數</label><input type="number" value={l.totalMonths} onChange={e => updateLoan(i, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                             <div><label className="text-[10px] text-slate-500">寬限期</label><input type="number" value={l.gracePeriod} onChange={e => updateLoan(i, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
-                            <div><label className="text-[10px] text-slate-500">已繳</label><input type="number" value={l.paidMonths} onChange={e => updateLoan(i, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                         </div>
                     </div>
                   ))}
-                  <button onClick={() => setLoans([...loans, {id:Date.now().toString(), name:'新房貸', principal:0, rate1:2.1, rate1Months:36, rate2:2.3, totalMonths:360, paidMonths:0, gracePeriod:0, type:'PrincipalAndInterest'}])} className="text-xs text-blue-400">+ 新增房貸</button>
+                  <button onClick={() => setLoans([...loans, {id:Date.now().toString(), name:'新房貸', principal:0, rate1:2.1, rate1Months:36, rate2:2.3, totalMonths:360, paidMonths:0, gracePeriod:0, type:'PrincipalAndInterest'}])} className="text-xs text-blue-400 hover:underline">+ 新增房貸</button>
                 </div>
 
                 <div className="pt-4 border-t border-slate-700 grid grid-cols-2 gap-4">
@@ -310,7 +339,7 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-700"><label className="text-slate-400">生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={e => setTaxStatus({...taxStatus, livingExpenses: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded border border-slate-600"/></div>
+                <div className="pt-4 border-t border-slate-700"><label className="text-slate-400">月生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={e => setTaxStatus({...taxStatus, livingExpenses: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded border border-slate-600"/></div>
                 <div className="p-3 bg-emerald-900/20 rounded-lg text-xs text-emerald-300">Firebase: portfolios / tony1006</div>
             </div>
             <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-2 bg-blue-600 rounded-lg font-bold">儲存並關閉</button>
