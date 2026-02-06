@@ -22,26 +22,60 @@ const COLLECTION_NAME = "portfolios";
 const DOCUMENT_ID = "tony1006";
 
 // ==========================================
-// 2. 定義介面 (Interfaces)
+// 2. 定義介面
 // ==========================================
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
 interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
 interface Loan { id: string; name: string; principal: number; rate1: number; rate1Months: number; rate2: number; totalMonths: number; paidMonths: number; gracePeriod: number; startDate?: string; type: string; }
 interface StockLoan { principal: number; rate: number; maintenanceLimit?: number; }
 interface CreditLoan { principal: number; rate: number; totalMonths: number; paidMonths: number; }
-interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; }
+interface TaxStatus { 
+    salaryIncome: number; 
+    livingExpenses: number; 
+    dependents: number; 
+    hasSpouse: boolean; 
+    isDisabled: boolean; 
+    disabilityCount: number; 
+}
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { priceSourceUrl: string; enabled: boolean; }
-// 新增: 用來存每個月的「實領股息」
-interface Actuals { [month: number]: number; } 
+interface Actuals { [month: number]: number; } // 實領紀錄
 
 const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7' };
 
 // ==========================================
-// 3. 計算工具
+// 3. 計算工具 (含稅務引擎)
 // ==========================================
 const formatMoney = (val: any) => `$${Math.floor(Number(val) || 0).toLocaleString()}`;
+
+// 2025 綜所稅試算引擎
+const calculateIncomeTax = (salary: number, dividend: number, status: TaxStatus) => {
+    // 免稅額: 9.7萬/人
+    const exemption = 97000 * (1 + (status.hasSpouse ? 1 : 0) + status.dependents);
+    // 標準扣除額: 單人13.1萬 / 有配偶26.2萬
+    const stdDed = status.hasSpouse ? 262000 : 131000;
+    // 薪資扣除額: 上限21.8萬
+    const salaryDed = Math.min(salary, 218000 * (1 + (status.hasSpouse ? 1 : 0))); 
+    // 身心障礙扣除額: 21.8萬/人
+    const disabilityDed = 218000 * (status.disabilityCount || (status.isDisabled ? 1 : 0));
+    
+    const totalDeductions = exemption + stdDed + salaryDed + disabilityDed;
+    const grossIncome = salary + dividend;
+    const netTaxableIncome = Math.max(0, grossIncome - totalDeductions);
+
+    // 累進稅率
+    let grossTax = 0;
+    if (netTaxableIncome <= 610000) grossTax = netTaxableIncome * 0.05;
+    else if (netTaxableIncome <= 1380000) grossTax = netTaxableIncome * 0.12 - 42700;
+    else if (netTaxableIncome <= 2660000) grossTax = netTaxableIncome * 0.20 - 153100;
+    else grossTax = netTaxableIncome * 0.30 - 419100;
+
+    // 股利可抵減稅額 (8.5%, 上限8萬)
+    const dividendCredit = Math.min(80000, dividend * 0.085);
+    
+    return Math.floor(grossTax - dividendCredit);
+};
 
 const calculateLoanPayment = (loan: Loan) => {
     const p = Number(loan.principal); const paid = Number(loan.paidMonths); const grace = Number(loan.gracePeriod);
@@ -62,8 +96,20 @@ const recalculateEtfStats = (etf: ETF): ETF => {
 const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, creditLoan: CreditLoan, globalMarginLoan: StockLoan, taxStatus: TaxStatus, actuals: Actuals) => {
     const flows = [];
     const monthlySalary = Number(taxStatus.salaryIncome) / 12;
+    
+    // 預估全年股息 (用於算綜所稅)
+    let annualDividendProjected = 0;
+    etfs.forEach(e => {
+        let payout = Number(e.dividendPerShare);
+        if (e.dividendType === 'annual') annualDividendProjected += Number(e.shares) * payout;
+        else if (e.payMonths) annualDividendProjected += Number(e.shares) * payout * e.payMonths.length;
+    });
+
+    const annualIncomeTax = calculateIncomeTax(Number(taxStatus.salaryIncome), annualDividendProjected, taxStatus);
+    const monthlyIncomeTaxImpact = annualIncomeTax / 12;
+
     for (let m = 1; m <= 12; m++) {
-        let divInProjected = 0; // 預估值
+        let divInProjected = 0;
         etfs.forEach(e => {
             if (e.payMonths?.includes(m)) {
                 let payout = Number(e.dividendPerShare);
@@ -72,12 +118,11 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
             }
         });
         
-        // 如果有填寫實領，就用實領的；否則用預估扣掉預設健保費
+        // 實領邏輯: 有填實領用實領，沒填用預估扣健保
         const healthTaxProjected = Math.floor(divInProjected * 0.0211);
         const netDivProjected = divInProjected - healthTaxProjected;
-        
-        const actualDiv = actuals[m] !== undefined ? actuals[m] : 0; // 用戶手填的實領金額
-        const divUsedInCalc = actualDiv > 0 ? actualDiv : netDivProjected; // 計算淨流時，有實領用實領，沒實領用預估
+        const actualDiv = actuals[m] !== undefined ? actuals[m] : 0;
+        const divUsed = actualDiv > 0 ? actualDiv : netDivProjected;
 
         let loanOut = 0; loans.forEach(l => loanOut += calculateLoanPayment(l));
         const cRate = Number(creditLoan.rate) / 100 / 12;
@@ -85,28 +130,28 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
         const stockInt = Math.floor((Number(stockLoan.principal) * (Number(stockLoan.rate)/100)/12) + (Number(globalMarginLoan.principal) * (Number(globalMarginLoan.rate)/100)/12));
         const marginInt = etfs.reduce((acc, e) => acc + (Number(e.marginLoanAmount||0) * (Number(e.marginInterestRate||6.5)/100)/12), 0);
         
-        const totalExpenses = loanOut + creditOut + stockInt + marginInt + Number(taxStatus.livingExpenses);
-        const net = monthlySalary + divUsedInCalc - totalExpenses;
-
+        const healthTaxReal = actualDiv > 0 ? 0 : healthTaxProjected; // 若已填實領，假設已扣過健保，不再重複扣
+        
         flows.push({ 
             month: m, 
             salary: monthlySalary, 
-            divProjected: divInProjected, // 原始預估(稅前)
-            divActual: actualDiv,         // 實領(稅後)
-            divDiff: actualDiv > 0 ? actualDiv - netDivProjected : 0, // 差異
+            divProjected: divInProjected, 
+            divActual: actualDiv,
+            divDiff: actualDiv > 0 ? actualDiv - netDivProjected : 0,
             loanOut, 
             creditOut, 
             stockInt: stockInt + marginInt, 
             life: Number(taxStatus.livingExpenses), 
-            net 
+            tax: healthTaxReal + monthlyIncomeTaxImpact,
+            net: monthlySalary + divUsed - loanOut - creditOut - (stockInt + marginInt) - Number(taxStatus.livingExpenses) - monthlyIncomeTaxImpact
         });
     }
     return flows;
 };
 
-// --- Firebase ---
+// --- Firebase Init ---
 let db: any = null;
-try { const firebaseApp = initializeApp(YOUR_FIREBASE_CONFIG); db = getFirestore(firebaseApp); } catch(e) {}
+try { const app = initializeApp(YOUR_FIREBASE_CONFIG); db = getFirestore(app); } catch(e) {}
 
 const StorageService = {
     saveData: async (data: any) => {
@@ -138,25 +183,22 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
 
-  // Data States
   const [etfs, setEtfs] = useState<ETF[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [stockLoan, setStockLoan] = useState<StockLoan>({rate:2.56, principal:0});
   const [globalMarginLoan, setGlobalMarginLoan] = useState<StockLoan>({rate:4.5, principal:0});
   const [creditLoan, setCreditLoan] = useState<CreditLoan>({rate:4.05, totalMonths:84, principal:0, paidMonths:0});
-  const [taxStatus, setTaxStatus] = useState<TaxStatus>({salaryIncome:0, livingExpenses:0, hasSpouse:true, isDisabled:true, dependents:0});
+  const [taxStatus, setTaxStatus] = useState<TaxStatus>({salaryIncome:589200, livingExpenses:0, hasSpouse:true, isDisabled:true, dependents:0, disabilityCount:1});
   const [allocation, setAllocation] = useState<AllocationConfig>({activeRatio:5, hedgingRatio:15, dividendRatio:80, totalFunds:14500000});
   const [cloudConfig, setCloudConfig] = useState<CloudConfig>({ priceSourceUrl: '', enabled: true });
-  const [actuals, setActuals] = useState<Actuals>({}); // 實領股息紀錄
+  const [actuals, setActuals] = useState<Actuals>({});
   const [reinvest, setReinvest] = useState(true);
 
-  // UI States
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
   const [buyForm, setBuyForm] = useState({ shares: '', price: '', date: '', margin: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load Data
   useEffect(() => {
     StorageService.loadData().then(res => {
       setDataSrc(res.source);
@@ -171,26 +213,22 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // Auto-Save
   useEffect(() => {
     if (isInitializing) return;
     setSaveStatus('saving');
     const t = setTimeout(async () => {
-      const state = { etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, actuals };
-      await StorageService.saveData(state);
+      await StorageService.saveData({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, actuals });
       setSaveStatus('saved'); setTimeout(() => setSaveStatus('idle'), 2000);
     }, 1500);
     return () => clearTimeout(t);
   }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, actuals, isInitializing]);
 
-  // Calculations
   const monthlyFlows = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, actuals), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, actuals]);
-  const totalDividend = monthlyFlows.reduce((a, b) => a + (b.divActual > 0 ? b.divActual : (b.divProjected * 0.9789)), 0); // 年度總股息(混合實領與預估)
-  const totalMortgage = monthlyFlows.reduce((a, b) => a + b.loanOut, 0);
-  const totalCredit = monthlyFlows.reduce((a, b) => a + b.creditOut, 0);
-  const totalStockInterest = monthlyFlows.reduce((a, b) => a + b.stockInt, 0);
-  const totalLiving = monthlyFlows.reduce((a, b) => a + b.life, 0);
-  const totalNet = monthlyFlows.reduce((a, b) => a + b.net, 0);
+  
+  const totalDividend = monthlyFlows.reduce((a, b) => a + (b.divActual > 0 ? b.divActual : (b.divProjected * 0.9789)), 0);
+  const totalSalary = monthlyFlows.reduce((a, b) => a + b.salary, 0);
+  const totalOut = monthlyFlows.reduce((a, b) => a + b.loanOut + b.creditOut + b.stockInt + b.life + b.tax, 0);
+  const totalNet = totalSalary + totalDividend - totalOut;
 
   const totalValue = etfs.reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)), 0);
   const totalStockDebt = Number(stockLoan.principal) + Number(globalMarginLoan.principal) + etfs.reduce((a, e) => a + (Number(e.marginLoanAmount) || 0), 0);
@@ -201,7 +239,6 @@ const App: React.FC = () => {
   const actualAct = etfs.filter(e => e.category === 'active').reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)) - (Number(e.marginLoanAmount) || 0), 0);
 
   const combatPower = Math.floor((totalValue/10000) + (totalDividend/12/100));
-  const totalOut = totalMortgage + totalCredit + totalStockInterest + totalLiving;
   const fireRatio = totalOut > 0 ? (totalDividend / totalOut) * 100 : 0;
 
   const snowballData = useMemo(() => { 
@@ -228,7 +265,6 @@ const App: React.FC = () => {
     { subject: '成長', A: Math.min(100, (actualAct / (totalValue - totalStockDebt || 1)) * 500) },
   ];
 
-  // Handlers
   const moveEtf = (i: number, d: number) => { const n = [...etfs]; if(i+d < 0 || i+d >= n.length) return; [n[i], n[i+d]] = [n[i+d], n[i]]; setEtfs(n); };
   const removeEtf = (id: string) => { if (confirm('確定刪除？')) setEtfs(etfs.filter(e => e.id !== id)); };
   const updateLoan = (i: number, f: string, v: any) => { 
@@ -262,7 +298,7 @@ const App: React.FC = () => {
     <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V63</h1>
+          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V64</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400"/> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400"/> : <WifiOff size={12} className="text-slate-500"/>}
@@ -285,7 +321,6 @@ const App: React.FC = () => {
       </header>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
             <div className="bg-slate-800 p-6 rounded-2xl border border-emerald-500/50 shadow-xl relative overflow-hidden">
                 <div className="text-slate-400 text-[10px] font-bold uppercase mb-1">玩家等級</div>
@@ -319,12 +354,9 @@ const App: React.FC = () => {
                   {etfs.map((e, idx) => (
                     <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 relative group">
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all"><button onClick={() => moveEtf(idx, -1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowUp size={14}/></button><button onClick={() => moveEtf(idx, 1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowDown size={14}/></button><button onClick={() => removeEtf(e.id)} className="p-1 hover:bg-slate-700 rounded text-red-400"><Trash2 size={14}/></button></div>
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="relative"><input type="text" value={e.code || ''} onChange={v => { const n=[...etfs]; n[idx].code=v.target.value; setEtfs(n); }} className="absolute -top-5 left-0 text-[10px] text-slate-500 bg-slate-800 px-1 rounded w-16" placeholder="代號"/><input type="text" value={e.name} onChange={v => { const n=[...etfs]; n[idx].name=v.target.value; setEtfs(n); }} className="bg-transparent font-bold text-white outline-none w-full"/></div>
-                        <div className="flex gap-1"><button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><ShoppingCart size={14}/></button><button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><List size={14}/></button></div>
-                      </div>
+                      <div className="flex justify-between items-center mb-2"><div className="relative"><input type="text" value={e.code || ''} onChange={v => { const n=[...etfs]; n[idx].code=v.target.value; setEtfs(n); }} className="absolute -top-5 left-0 text-[10px] text-slate-500 bg-slate-800 px-1 rounded w-16" placeholder="代號"/><input type="text" value={e.name} onChange={v => { const n=[...etfs]; n[idx].name=v.target.value; setEtfs(n); }} className="bg-transparent font-bold text-white outline-none w-full"/></div><div className="flex gap-1"><button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><ShoppingCart size={14}/></button><button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><List size={14}/></button></div></div>
                       
-                      {/* 標的分類選單 (V63 補回) */}
+                      {/* V63 補回：標的分類 */}
                       <div className="mb-2">
                           <select value={e.category || 'dividend'} onChange={(v) => { const n=[...etfs]; n[idx].category=v.target.value as any; setEtfs(n); }} className="bg-slate-800 text-xs text-blue-300 rounded border border-slate-700 px-1 py-0.5 outline-none">
                               <option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option>
@@ -356,10 +388,11 @@ const App: React.FC = () => {
                 <div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={snowballData}><defs><linearGradient id="cw" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.8}/><stop offset="95%" stopColor="#818cf8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="year" stroke="#94a3b8"/><YAxis stroke="#94a3b8"/><Tooltip formatter={(v:number)=>formatMoney(v)}/><Area type="monotone" dataKey="wealth" stroke="#818cf8" fill="url(#cw)" /></AreaChart></ResponsiveContainer></div>
            </div>
 
+           {/* V63 新增: 實領對帳表格 */}
            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
              <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月對帳明細 (可填實領)</h3>
              <table className="w-full text-sm text-left">
-               <thead className="text-slate-500 bg-slate-900/50"><tr><th className="p-3">月份</th><th className="p-3">薪資</th><th className="p-3">預估股息</th><th className="p-3 bg-emerald-900/30 text-emerald-400">實領股息(填)</th><th className="p-3">差異</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3 text-right">淨流</th></tr></thead>
+               <thead className="text-slate-500 bg-slate-900/50"><tr><th className="p-3">月份</th><th className="p-3">薪資</th><th className="p-3">預估股息</th><th className="p-3 bg-emerald-900/30 text-emerald-400">實領股息(填)</th><th className="p-3">差異</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3">稅金</th><th className="p-3 text-right">淨流</th></tr></thead>
                <tbody>{monthlyFlows.map(r => (<tr key={r.month} className="border-b border-slate-700/50 hover:bg-slate-700/30 font-mono text-xs">
                      <td className="p-3 font-bold text-white font-sans">{r.month}月</td>
                      <td className="p-3 text-slate-400">{formatMoney(r.salary)}</td>
@@ -370,10 +403,11 @@ const App: React.FC = () => {
                      <td className="p-3 text-orange-400">{formatMoney(r.creditOut)}</td>
                      <td className="p-3 text-blue-300">{formatMoney(r.stockInt)}</td>
                      <td className="p-3 text-slate-500">{formatMoney(r.life)}</td>
+                     <td className="p-3 text-purple-400 text-[10px]">{formatMoney(r.healthTax)}<br/><span className="opacity-50">+{formatMoney(r.incomeTax)}</span></td>
                      <td className={`p-3 text-right font-bold ${r.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
                    </tr>))}</tbody>
                <tfoot><tr className="bg-slate-900 font-black text-white">
-                   <td className="p-3 font-sans">年度總計</td><td className="p-3">{formatMoney(monthlyFlows.reduce((a,b)=>a+b.salary,0))}</td><td className="p-3">預:{formatMoney(monthlyFlows.reduce((a,b)=>a+b.divProjected,0))}</td><td className="p-3 text-emerald-400">實:{formatMoney(totalDividend)}</td><td></td><td className="p-3 text-red-400" colSpan={4}>總支出: {formatMoney(totalOut)}</td><td className={`p-3 text-right font-mono ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
+                   <td className="p-3 font-sans">年度總計</td><td className="p-3">{formatMoney(monthlyFlows.reduce((a,b)=>a+b.salary,0))}</td><td className="p-3">預:{formatMoney(monthlyFlows.reduce((a,b)=>a+b.divProjected,0))}</td><td className="p-3 text-emerald-400">實:{formatMoney(totalDividend)}</td><td></td><td className="p-3 text-red-400" colSpan={4}>總支出: {formatMoney(totalOut)}</td><td></td><td className={`p-3 text-right font-mono ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
                </tr></tfoot>
              </table>
            </div>
@@ -393,36 +427,59 @@ const App: React.FC = () => {
                     <div><label className="text-slate-400">避險%</label><input type="number" value={allocation.hedgingRatio} onChange={e => setAllocation({...allocation, hedgingRatio: Number(e.target.value)})} className="w-full bg-slate-800 p-1.5 rounded"/></div>
                     <div><label className="text-slate-400">主動%</label><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-full bg-slate-800 p-1.5 rounded"/></div>
                 </div>
+
+                {/* V61 補回: 稅務設定 */}
+                <div className="pt-4 border-t border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div><h4 className="text-yellow-400 font-bold mb-2">綜所稅試算參數 (2025)</h4>
+                        <div className="space-y-2 p-3 bg-yellow-900/20 rounded-xl border border-yellow-700/50">
+                            <div><label className="text-slate-400">年薪資所得 (含獎金)</label><input type="number" value={taxStatus.salaryIncome} onChange={e => setTaxStatus({...taxStatus, salaryIncome: Number(e.target.value)})} className="w-full bg-slate-900 p-1.5 rounded border border-slate-700"/></div>
+                            <div className="flex items-center gap-2"><input type="checkbox" checked={taxStatus.hasSpouse} onChange={e => setTaxStatus({...taxStatus, hasSpouse: e.target.checked})}/><label className="text-slate-300">有配偶合併申報</label></div>
+                            <div className="flex items-center gap-2"><input type="checkbox" checked={taxStatus.isDisabled} onChange={e => setTaxStatus({...taxStatus, isDisabled: e.target.checked})}/><label className="text-slate-300">領有身心障礙手冊</label></div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div><label className="text-slate-500">扶養人數</label><input type="number" value={taxStatus.dependents} onChange={e => setTaxStatus({...taxStatus, dependents: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded"/></div>
+                                <div><label className="text-slate-500">身障人數</label><input type="number" value={taxStatus.disabilityCount} onChange={e => setTaxStatus({...taxStatus, disabilityCount: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded"/></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div><h4 className="text-blue-400 font-bold mb-2">信貸/不限用途</h4>
+                        <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                                <div><label className="text-slate-500 text-[10px]">信貸本金</label><input type="number" value={creditLoan.principal} onChange={e => setCreditLoan({...creditLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded"/></div>
+                                <div><label className="text-slate-500 text-[10px]">利率%</label><input type="number" value={creditLoan.rate} onChange={e => setCreditLoan({...creditLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded"/></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div><label className="text-slate-500 text-[10px]">借貸本金</label><input type="number" value={stockLoan.principal} onChange={e => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded"/></div>
+                                <div><label className="text-slate-500 text-[10px]">利率%</label><input type="number" value={stockLoan.rate} onChange={e => setStockLoan({...stockLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded"/></div>
+                            </div>
+                            <div><label className="text-slate-400">每月生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={e => setTaxStatus({...taxStatus, livingExpenses: Number(e.target.value)})} className="w-full bg-slate-900 p-1.5 rounded border border-slate-700"/></div>
+                        </div>
+                    </div>
+                </div>
                 
-                <div className="pt-4 border-t border-slate-700"><h4 className="text-emerald-400 font-bold mb-2">房貸設定</h4>
+                <div className="pt-4 border-t border-slate-700"><h4 className="text-emerald-400 font-bold mb-2">房貸進階設定</h4>
                   {loans.map((l, i) => (
-                    <div key={l.id} className="mb-4 p-3 bg-slate-900 rounded-xl border border-slate-700">
-                        <div className="grid grid-cols-2 gap-3 mb-2"><input type="text" value={l.name} onChange={e => updateLoan(i, 'name', e.target.value)} className="w-full bg-slate-800 p-1 rounded border border-slate-700" placeholder="名稱"/><input type="number" value={l.principal} onChange={e => updateLoan(i, 'principal', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded border border-slate-700" placeholder="本金"/></div>
-                        <div className="grid grid-cols-2 gap-3 mb-2">
-                            <div><label className="text-[10px] text-emerald-500">核貸日期</label><input type="date" value={l.startDate || ''} onChange={e => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-800 p-1 rounded"/></div>
-                            <div><label className="text-[10px] text-slate-500">已繳(手動)</label><input type="number" value={l.paidMonths} onChange={e => updateLoan(i, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
+                    <div key={l.id} className="mb-4 p-4 bg-slate-900/80 rounded-xl border border-slate-600">
+                        <div className="grid grid-cols-2 gap-4 mb-3">
+                            <div><label className="text-slate-500 text-[10px]">名稱</label><input type="text" value={l.name} onChange={e => updateLoan(i, 'name', e.target.value)} className="w-full bg-slate-800 p-1 rounded"/></div>
+                            <div><label className="text-slate-500 text-[10px]">本金</label><input type="number" value={l.principal} onChange={e => updateLoan(i, 'principal', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                             <div><label className="text-[10px] text-slate-500">利率1%</label><input type="number" value={l.rate1} onChange={e => updateLoan(i, 'rate1', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                             <div><label className="text-[10px] text-slate-500">月數1</label><input type="number" value={l.rate1Months} onChange={e => updateLoan(i, 'rate1Months', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                             <div><label className="text-[10px] text-slate-500">利率2%</label><input type="number" value={l.rate2} onChange={e => updateLoan(i, 'rate2', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                            <div><label className="text-[10px] text-slate-500">總期數</label><input type="number" value={l.totalMonths} onChange={e => updateLoan(i, 'totalMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                            <div><label className="text-[10px] text-emerald-400 font-bold">撥款日期</label><input type="date" value={l.startDate || ''} onChange={e => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-800 p-1 rounded border border-emerald-900"/></div>
                             <div><label className="text-[10px] text-slate-500">寬限期</label><input type="number" value={l.gracePeriod} onChange={e => updateLoan(i, 'gracePeriod', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
+                            <div><label className="text-[10px] text-slate-500">已繳期數</label><input type="number" value={l.paidMonths} onChange={e => updateLoan(i, 'paidMonths', Number(e.target.value))} className="w-full bg-slate-800 p-1 rounded"/></div>
                         </div>
+                        <button onClick={()=>setLoans(loans.filter(x=>x.id!==l.id))} className="text-[10px] text-red-500 mt-2 hover:underline">刪除貸款</button>
                     </div>
                   ))}
-                  <button onClick={() => setLoans([...loans, {id:Date.now().toString(), name:'新房貸', principal:0, rate1:2.1, rate1Months:36, rate2:2.3, totalMonths:360, paidMonths:0, gracePeriod:0, type:'PrincipalAndInterest'}])} className="text-xs text-blue-400 hover:underline">+ 新增</button>
+                  <button onClick={() => setLoans([...loans, {id:Date.now().toString(), name:'新房貸', principal:0, rate1:2.1, rate1Months:36, rate2:2.3, totalMonths:360, paidMonths:0, gracePeriod:0, type:'PrincipalAndInterest'}])} className="text-xs text-blue-400 border border-blue-400/30 px-3 py-1 rounded-lg hover:bg-blue-400/10">+ 新增房貸</button>
                 </div>
-
-                <div className="pt-4 border-t border-slate-700 grid grid-cols-2 gap-4">
-                    <div><h4 className="text-blue-400 font-bold mb-2">信貸</h4><input type="number" value={creditLoan.principal} onChange={e => setCreditLoan({...creditLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700 mb-1" placeholder="本金"/><input type="number" value={creditLoan.rate} onChange={e => setCreditLoan({...creditLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700" placeholder="利率%"/></div>
-                    <div><h4 className="text-amber-400 font-bold mb-2">不限用途借貸/質押</h4><input type="number" value={stockLoan.principal} onChange={e => setStockLoan({...stockLoan, principal: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700 mb-1" placeholder="本金"/><input type="number" value={stockLoan.rate} onChange={e => setStockLoan({...stockLoan, rate: Number(e.target.value)})} className="w-full bg-slate-900 p-1 rounded border border-slate-700" placeholder="利率%"/></div>
-                </div>
-                <div className="pt-4 border-t border-slate-700"><label className="text-slate-400">生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={e => setTaxStatus({...taxStatus, livingExpenses: Number(e.target.value)})} className="w-full bg-slate-900 p-2 rounded border border-slate-600"/></div>
             </div>
-            <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-2 bg-blue-600 rounded-lg font-bold">儲存關閉</button>
+            <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-3 bg-blue-600 rounded-xl font-bold shadow-lg hover:bg-blue-500 transition-all">儲存關閉並同步</button>
           </div>
         </div>
       )}
