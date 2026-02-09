@@ -39,19 +39,45 @@ interface TaxStatus {
 }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { priceSourceUrl: string; enabled: boolean; }
-// V73 改良: 實領紀錄改為 "月份_ID" 對應金額，支援細項紀錄
-interface ActualDetails { [key: string]: number; } 
+interface ActualDetails { [key: string]: number; } // 實領細項: "month_etfId": amount
 
-// ★★★ V73: 完整持股清單 (含00991A, 00992A, GOLD) ★★★
+// ★★★ V74: 完整持股 (同步您的 JSON backup 4) ★★★
 const TONY_DEFAULT_ETFS: ETF[] = [
-    { id: '0056', code: '0056', name: '元大高股息', shares: 151000, costPrice: 36.1, currentPrice: 37.17, dividendPerShare: 0.866, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'dividend', exDate: '2026-01-22', payDate: '2026-02-11' },
-    { id: '00878', code: '00878', name: '國泰永續高股息', shares: 50000, costPrice: 22.49, currentPrice: 22.7, dividendPerShare: 0.42, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'dividend', exDate: '2026-02-26', payDate: '2026-03-23' },
-    { id: '00919', code: '00919', name: '群益精選高息', shares: 140000, costPrice: 23.03, currentPrice: 23.03, dividendPerShare: 0.54, dividendType: 'per_period', payMonths: [4,7,10,1], category: 'dividend', exDate: '2026-03-16', payDate: '2026-04-15' },
-    { id: '00981A', code: '00981A', name: '主動統一台股增長', shares: 70000, costPrice: 17.54, currentPrice: 17.54, dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,4,7,10], category: 'active' },
-    { id: '00982A', code: '00982A', name: '群益主動強棒', shares: 450000, costPrice: 14.75, currentPrice: 15.0, dividendPerShare: 0.377, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'active', exDate: '2026-02-26', payDate: '2026-03-25' },
-    { id: '00991A', code: '00991A', name: '主動復華未來50', shares: 70000, costPrice: 11.7, currentPrice: 11.28, dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,7], category: 'active' },
-    { id: '00992A', code: '00992A', name: '主動群益科技創新', shares: 70000, costPrice: 11.37, currentPrice: 11.2, dividendPerShare: 0.2, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'active' },
-    { id: 'GOLD', code: 'GOLD', name: '實體黃金 (克)', shares: 72.2, costPrice: 4806.1, currentPrice: 4907, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging' }
+    { 
+        id: '0056', code: '0056', name: '元大高股息', shares: 151000, costPrice: 36.61, currentPrice: 38.05, 
+        dividendPerShare: 0.866, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'dividend',
+        exDate: '2026-01-22', payDate: '2026-02-11'
+    },
+    { 
+        id: '00878', code: '00878', name: '國泰永續高股息', shares: 50000, costPrice: 22.85, currentPrice: 23.08, 
+        dividendPerShare: 0.42, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'dividend',
+        exDate: '2026-02-26', payDate: '2026-03-23'
+    },
+    { 
+        id: '00919', code: '00919', name: '群益精選高息', shares: 140000, costPrice: 23.15, currentPrice: 23.54, 
+        dividendPerShare: 0.54, dividendType: 'per_period', payMonths: [4,7,10,1], category: 'dividend',
+        exDate: '2026-03-16', payDate: '2026-04-15'
+    },
+    { 
+        id: '00981A', code: '00981A', name: '主動統一台股增長', shares: 70000, costPrice: 17.96, currentPrice: 18.34, 
+        dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,4,7,10], category: 'active' 
+    },
+    { 
+        id: '00982A', code: '00982A', name: '群益主動強棒', shares: 450000, costPrice: 14.62, currentPrice: 15.39, 
+        dividendPerShare: 0.377, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'active',
+        exDate: '2026-02-26', payDate: '2026-03-25'
+    },
+    { 
+        id: '00991A', code: '00991A', name: '主動復華未來50', shares: 70000, costPrice: 11.7, currentPrice: 11.61, 
+        dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,7], category: 'active' 
+    },
+    { 
+        id: '00992A', code: '00992A', name: '主動群益科技創新', shares: 70000, costPrice: 11.37, currentPrice: 11.54, 
+        dividendPerShare: 0.2, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'active' 
+    },
+    { id: '00635U', code: '00635U', name: '期元大S&P黃金', shares: 1000, costPrice: 51.52, currentPrice: 52.95, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging' },
+    { id: '00738U', code: '00738U', name: '期元大道瓊白銀', shares: 1000, costPrice: 62.19, currentPrice: 65.85, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging' },
+    { id: 'GOLD', code: 'GOLD', name: '實體黃金 (克)', shares: 72.2, costPrice: 4806.1, currentPrice: 5047, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging' }
 ];
 
 const BROKERAGE_RATE = 0.001425;
@@ -139,7 +165,6 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
                 const projectedAmt = Math.floor(qualifiedShares * payout);
                 divInProjected += projectedAmt;
                 
-                // V73: 讀取該標的當月的實領金額
                 const actualKey = `${m}_${e.id}`;
                 const actualAmt = actualDetails[actualKey] !== undefined ? actualDetails[actualKey] : 0;
                 if (actualAmt > 0) divInActualTotal += actualAmt;
@@ -233,7 +258,6 @@ const App: React.FC = () => {
         if(d.globalMarginLoan) setGlobalMarginLoan(d.globalMarginLoan); if(d.creditLoan) setCreditLoan(d.creditLoan);
         if(d.taxStatus) setTaxStatus(d.taxStatus); if(d.allocation) setAllocation(d.allocation);
         if(d.cloudConfig) setCloudConfig(d.cloudConfig); 
-        // V73: 載入細項實領資料 (相容舊版)
         if(d.actualDetails) setActualDetails(d.actualDetails); else if (d.actuals) setActualDetails(d.actuals); 
       } else {
           setEtfs(TONY_DEFAULT_ETFS);
@@ -305,7 +329,6 @@ const App: React.FC = () => {
       } else { (n[i] as any)[f] = v; }
       setLoans(n); 
   };
-  // V73: 更新細項實領 (Key = 月份_EtfID)
   const updateDetailActual = (month: number, etfId: string, val: number) => {
       setActualDetails(prev => ({ ...prev, [`${month}_${etfId}`]: val }));
   };
@@ -325,7 +348,7 @@ const App: React.FC = () => {
   };
 
   const handleReset = () => {
-      if(confirm('確定重置為預設資料？')) {
+      if(confirm('確定重置為預設資料 (含完整持股)？')) {
           setEtfs(TONY_DEFAULT_ETFS);
           window.location.reload();
       }
@@ -337,7 +360,7 @@ const App: React.FC = () => {
     <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V73</h1>
+          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V74</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400"/> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400"/> : <WifiOff size={12} className="text-slate-500"/>}
@@ -352,7 +375,7 @@ const App: React.FC = () => {
             <input type="file" ref={fileInputRef} onChange={(e) => {
                 const f = e.target.files?.[0]; if(!f) return;
                 const r = new FileReader(); r.onload = (ev) => {
-                    try { const d = JSON.parse(ev.target?.result as string); if(d.etfs) { setEtfs(d.etfs); if(d.loans) setLoans(d.loans); setTaxStatus(d.taxStatus); setAllocation(d.allocation); if(d.cloudConfig) setCloudConfig(d.cloudConfig); if(d.actualDetails) setActualDetails(d.actualDetails); else if(d.actuals) setActualDetails(d.actuals); alert('匯入成功'); } } catch(e) { alert('格式錯誤'); }
+                    try { const d = JSON.parse(ev.target?.result as string); if(d.etfs) { setEtfs(d.etfs); if(d.loans) setLoans(d.loans); setTaxStatus(d.taxStatus); setAllocation(d.allocation); if(d.cloudConfig) setCloudConfig(d.cloudConfig); if(d.actualDetails) setActualDetails(d.actualDetails); else if (d.actuals) setActualDetails(d.actuals); alert('匯入成功'); } } catch(e) { alert('格式錯誤'); }
                 }; r.readAsText(f);
             }} className="hidden" accept=".json"/>
             <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-slate-800 rounded border border-slate-700 text-blue-400"><Upload size={18}/></button>
@@ -426,7 +449,7 @@ const App: React.FC = () => {
            </div>
 
            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
-             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月對帳明細 (展開填寫各檔實領)</h3>
+             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月對帳明細 (可填實領)</h3>
              <table className="w-full text-sm text-left">
                <thead className="text-slate-500 bg-slate-900/50"><tr><th className="p-3">月份</th><th className="p-3">薪資</th><th className="p-3">預估股息</th><th className="p-3 bg-emerald-900/30 text-emerald-400">總實領</th><th className="p-3">差異</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3">稅金</th><th className="p-3 text-right">淨流</th></tr></thead>
                <tbody>
@@ -452,7 +475,7 @@ const App: React.FC = () => {
                                {r.details?.map((d, i) => (
                                    <div key={i} className="flex justify-between items-center border-b border-slate-700 pb-2">
                                        <div className="w-1/3">
-                                           <span className="text-white text-sm">{d.name}</span>
+                                           <span className="text-white text-sm">{d.name} <span className="text-[10px] text-slate-500">(除息 {d.exDate})</span></span>
                                            <div className="text-[10px] text-slate-500">預估: {formatMoney(d.amt)} (資格股數: {d.qualifiedShares.toLocaleString()})</div>
                                        </div>
                                        <div className="flex items-center gap-2">
