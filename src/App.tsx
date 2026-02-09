@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, PieChart, Pie, Cell, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
-import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar, Lightbulb, CheckCircle2, HelpCircle, Edit3, ArrowRightLeft, Plus, ArrowUp, ArrowDown, Wifi, WifiOff } from 'lucide-react';
+import { Calculator, DollarSign, Wallet, Activity, Save, Upload, Download, RotateCcw, Settings, Globe, Cloud, Loader2, Target, Zap, TrendingUp, RefreshCw, Gift, PieChart as PieIcon, Banknote, Flame, Share2, Scale, ShieldCheck, Swords, Coins, Skull, Gem, Scroll, Sparkles, Lock, Aperture, List, Trash2, X, Tag, ShoppingCart, Coffee, Layers, Crown, Trophy, Calendar, Lightbulb, CheckCircle2, HelpCircle, Edit3, ArrowRightLeft, Plus, ArrowUp, ArrowDown, Wifi, WifiOff, ChevronDown, ChevronUp } from 'lucide-react';
 
 // --- Firebase SDK ---
 import { initializeApp } from "firebase/app";
@@ -22,10 +22,17 @@ const COLLECTION_NAME = "portfolios";
 const DOCUMENT_ID = "tony1006";
 
 // ==========================================
-// 2. 定義介面
+// 2. 定義介面 & 您的專屬預設資料
 // ==========================================
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
-interface ETF { id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[]; }
+interface ETF { 
+    id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; 
+    dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; 
+    category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[];
+    // V72: 內建除息日與發放日 (YYYY-MM-DD)
+    exDate?: string; 
+    payDate?: string; 
+}
 interface Loan { id: string; name: string; principal: number; rate1: number; rate1Months: number; rate2: number; totalMonths: number; paidMonths: number; gracePeriod: number; startDate?: string; type: string; }
 interface StockLoan { principal: number; rate: number; maintenanceLimit?: number; }
 interface CreditLoan { principal: number; rate: number; totalMonths: number; paidMonths: number; }
@@ -39,7 +46,36 @@ interface TaxStatus {
 }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { priceSourceUrl: string; enabled: boolean; }
-interface Actuals { [month: number]: number; } // 實領紀錄
+interface Actuals { [month: number]: number; }
+
+// ★★★ V72: 依據截圖「寫死」最準確的 2026 Q1 日期 ★★★
+const TONY_DEFAULT_ETFS: ETF[] = [
+    { 
+        id: '0056', code: '0056', name: '元大高股息', shares: 151000, costPrice: 36.1, currentPrice: 37.17, 
+        dividendPerShare: 0.866, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'dividend',
+        exDate: '2026-01-22', payDate: '2026-02-11' // 截圖驗證
+    },
+    { 
+        id: '00878', code: '00878', name: '國泰永續高股息', shares: 50000, costPrice: 22.49, currentPrice: 22.7, 
+        dividendPerShare: 0.42, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'dividend',
+        exDate: '2026-02-26', payDate: '2026-03-23' // 截圖驗證
+    },
+    { 
+        id: '00919', code: '00919', name: '群益精選高息', shares: 140000, costPrice: 23.03, currentPrice: 23.03, 
+        dividendPerShare: 0.54, dividendType: 'per_period', payMonths: [4,7,10,1], category: 'dividend',
+        exDate: '2026-03-16', payDate: '2026-04-15' // 依慣例推算 (3月除息4月領)
+    },
+    { 
+        id: '00981A', code: '00981A', name: '主動統一台股增長', shares: 70000, costPrice: 17.54, currentPrice: 17.54, 
+        dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,4,7,10], category: 'active',
+        exDate: '2026-03-16', payDate: '2026-04-15' // 暫估
+    },
+    { 
+        id: '00982A', code: '00982A', name: '群益主動強棒', shares: 450000, costPrice: 14.75, currentPrice: 15.0, 
+        dividendPerShare: 0.377, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'active',
+        exDate: '2026-02-26', payDate: '2026-03-25' // 截圖驗證
+    }
+];
 
 const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7' };
@@ -49,29 +85,22 @@ const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7' };
 // ==========================================
 const formatMoney = (val: any) => `$${Math.floor(Number(val) || 0).toLocaleString()}`;
 
-// 2025 綜所稅試算引擎
 const calculateIncomeTax = (salary: number, dividend: number, status: TaxStatus) => {
-    // 免稅額: 9.7萬/人
     const exemption = 97000 * (1 + (status.hasSpouse ? 1 : 0) + status.dependents);
-    // 標準扣除額: 單人13.1萬 / 有配偶26.2萬
     const stdDed = status.hasSpouse ? 262000 : 131000;
-    // 薪資扣除額: 上限21.8萬
     const salaryDed = Math.min(salary, 218000 * (1 + (status.hasSpouse ? 1 : 0))); 
-    // 身心障礙扣除額: 21.8萬/人
     const disabilityDed = 218000 * (status.disabilityCount || (status.isDisabled ? 1 : 0));
     
     const totalDeductions = exemption + stdDed + salaryDed + disabilityDed;
     const grossIncome = salary + dividend;
     const netTaxableIncome = Math.max(0, grossIncome - totalDeductions);
 
-    // 累進稅率
     let grossTax = 0;
     if (netTaxableIncome <= 610000) grossTax = netTaxableIncome * 0.05;
     else if (netTaxableIncome <= 1380000) grossTax = netTaxableIncome * 0.12 - 42700;
     else if (netTaxableIncome <= 2660000) grossTax = netTaxableIncome * 0.20 - 153100;
     else grossTax = netTaxableIncome * 0.30 - 419100;
 
-    // 股利可抵減稅額 (8.5%, 上限8萬)
     const dividendCredit = Math.min(80000, dividend * 0.085);
     
     return Math.floor(grossTax - dividendCredit);
@@ -90,14 +119,18 @@ const recalculateEtfStats = (etf: ETF): ETF => {
     const totalShares = lots.reduce((acc, lot) => acc + Number(lot.shares), 0);
     const totalCost = lots.reduce((acc, lot) => acc + (Number(lot.shares) * Number(lot.price)) + (Number(lot.fee) || 0), 0);
     const totalMargin = lots.reduce((acc, lot) => acc + (Number(lot.margin) || 0), 0);
-    return { ...etf, shares: totalShares, costPrice: totalShares > 0 ? Number((totalCost / totalShares).toFixed(2)) : 0, marginLoanAmount: totalMargin };
+    return { 
+        ...etf, 
+        shares: totalShares > 0 ? totalShares : etf.shares, 
+        costPrice: totalShares > 0 ? Number((totalCost / totalShares).toFixed(2)) : etf.costPrice, 
+        marginLoanAmount: totalMargin > 0 ? totalMargin : etf.marginLoanAmount 
+    };
 };
 
 const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, creditLoan: CreditLoan, globalMarginLoan: StockLoan, taxStatus: TaxStatus, actuals: Actuals) => {
     const flows = [];
     const monthlySalary = Number(taxStatus.salaryIncome) / 12;
     
-    // 預估全年股息 (用於算綜所稅)
     let annualDividendProjected = 0;
     etfs.forEach(e => {
         let payout = Number(e.dividendPerShare);
@@ -110,15 +143,47 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 
     for (let m = 1; m <= 12; m++) {
         let divInProjected = 0;
+        const contributingEtfs: {name:string, amt:number, qualifiedShares:number, totalShares:number, exDate:string}[] = [];
+
         etfs.forEach(e => {
-            if (e.payMonths?.includes(m)) {
+            // V72 邏輯: 優先使用 exDate/payDate 判斷，若無則回退到 payMonths
+            let isPayMonth = false;
+            let currentExDate = e.exDate || '';
+
+            if (e.payDate) {
+                const payMonth = parseInt(e.payDate.split('-')[1]);
+                if (payMonth === m) isPayMonth = true;
+            } else if (e.payMonths?.includes(m)) {
+                isPayMonth = true;
+            }
+
+            if (isPayMonth) {
                 let payout = Number(e.dividendPerShare);
-                if (e.dividendType === 'annual' && e.payMonths.length > 0) payout /= e.payMonths.length;
-                divInProjected += Number(e.shares) * payout;
+                // 如果是年配但有多個月份，平均分配 (預估模式)
+                if (!e.payDate && e.dividendType === 'annual' && e.payMonths && e.payMonths.length > 0) payout /= e.payMonths.length;
+                
+                // ★★★ V72: 嚴格過濾買進日期 ★★★
+                let qualifiedShares = 0;
+                
+                // 只有當「有除息日」且「有分批明細」時，才進行過濾
+                if (currentExDate && e.lots && e.lots.length > 0) {
+                    e.lots.forEach(lot => {
+                        // 買進日期 < 除息日，才有資格領息
+                        if (lot.date < currentExDate) {
+                            qualifiedShares += Number(lot.shares);
+                        }
+                    });
+                } else {
+                    // 若無資料，預設全額參與
+                    qualifiedShares = Number(e.shares);
+                }
+
+                const amt = qualifiedShares * payout;
+                divInProjected += amt;
+                contributingEtfs.push({ name: e.name, amt, qualifiedShares, totalShares: Number(e.shares), exDate: currentExDate });
             }
         });
         
-        // 實領邏輯: 有填實領用實領，沒填用預估扣健保
         const healthTaxProjected = Math.floor(divInProjected * 0.0211);
         const netDivProjected = divInProjected - healthTaxProjected;
         const actualDiv = actuals[m] !== undefined ? actuals[m] : 0;
@@ -130,26 +195,21 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
         const stockInt = Math.floor((Number(stockLoan.principal) * (Number(stockLoan.rate)/100)/12) + (Number(globalMarginLoan.principal) * (Number(globalMarginLoan.rate)/100)/12));
         const marginInt = etfs.reduce((acc, e) => acc + (Number(e.marginLoanAmount||0) * (Number(e.marginInterestRate||6.5)/100)/12), 0);
         
-        const healthTaxReal = actualDiv > 0 ? 0 : healthTaxProjected; // 若已填實領，假設已扣過健保，不再重複扣
+        const healthTaxReal = actualDiv > 0 ? 0 : healthTaxProjected; 
         
         flows.push({ 
-            month: m, 
-            salary: monthlySalary, 
-            divProjected: divInProjected, 
-            divActual: actualDiv,
+            month: m, salary: monthlySalary, divProjected: divInProjected, divActual: actualDiv,
             divDiff: actualDiv > 0 ? actualDiv - netDivProjected : 0,
-            loanOut, 
-            creditOut, 
-            stockInt: stockInt + marginInt, 
-            life: Number(taxStatus.livingExpenses), 
-            tax: healthTaxReal + monthlyIncomeTaxImpact,
-            net: monthlySalary + divUsed - loanOut - creditOut - (stockInt + marginInt) - Number(taxStatus.livingExpenses) - monthlyIncomeTaxImpact
+            loanOut, creditOut, stockInt: stockInt + marginInt, life: Number(taxStatus.livingExpenses), 
+            healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact,
+            net: monthlySalary + divUsed - loanOut - creditOut - (stockInt + marginInt) - Number(taxStatus.livingExpenses) - healthTaxReal - monthlyIncomeTaxImpact,
+            details: contributingEtfs
         });
     }
     return flows;
 };
 
-// --- Firebase Init ---
+// --- Firebase ---
 let db: any = null;
 try { const app = initializeApp(YOUR_FIREBASE_CONFIG); db = getFirestore(app); } catch(e) {}
 
@@ -183,6 +243,7 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
 
+  // Data States
   const [etfs, setEtfs] = useState<ETF[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [stockLoan, setStockLoan] = useState<StockLoan>({rate:2.56, principal:0});
@@ -194,9 +255,11 @@ const App: React.FC = () => {
   const [actuals, setActuals] = useState<Actuals>({});
   const [reinvest, setReinvest] = useState(true);
 
+  // UI States
   const [expandedEtfId, setExpandedEtfId] = useState<string | null>(null);
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
   const [buyForm, setBuyForm] = useState({ shares: '', price: '', date: '', margin: '' });
+  const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -204,10 +267,13 @@ const App: React.FC = () => {
       setDataSrc(res.source);
       if (res.data) {
         const d = res.data;
-        if(d.etfs) setEtfs(d.etfs); if(d.loans) setLoans(d.loans); if(d.stockLoan) setStockLoan(d.stockLoan);
+        if(d.etfs && d.etfs.length > 0) setEtfs(d.etfs); else setEtfs(TONY_DEFAULT_ETFS); 
+        if(d.loans) setLoans(d.loans); if(d.stockLoan) setStockLoan(d.stockLoan);
         if(d.globalMarginLoan) setGlobalMarginLoan(d.globalMarginLoan); if(d.creditLoan) setCreditLoan(d.creditLoan);
         if(d.taxStatus) setTaxStatus(d.taxStatus); if(d.allocation) setAllocation(d.allocation);
         if(d.cloudConfig) setCloudConfig(d.cloudConfig); if(d.actuals) setActuals(d.actuals);
+      } else {
+          setEtfs(TONY_DEFAULT_ETFS);
       }
       setIsInitializing(false);
     });
@@ -227,7 +293,7 @@ const App: React.FC = () => {
   
   const totalDividend = monthlyFlows.reduce((a, b) => a + (b.divActual > 0 ? b.divActual : (b.divProjected * 0.9789)), 0);
   const totalSalary = monthlyFlows.reduce((a, b) => a + b.salary, 0);
-  const totalOut = monthlyFlows.reduce((a, b) => a + b.loanOut + b.creditOut + b.stockInt + b.life + b.tax, 0);
+  const totalOut = monthlyFlows.reduce((a, b) => a + b.loanOut + b.creditOut + b.stockInt + b.life + b.healthTax + b.incomeTax, 0);
   const totalNet = totalSalary + totalDividend - totalOut;
 
   const totalValue = etfs.reduce((a, e) => a + (Number(e.shares) * Number(e.currentPrice)), 0);
@@ -278,6 +344,7 @@ const App: React.FC = () => {
   };
   const updateActual = (m: number, v: number) => { setActuals(prev => ({...prev, [m]: v})); };
 
+  // V72: 雲端更新也支援抓取除息日 (ExDate) 和發放日 (PayDate)
   const handleUpdatePrices = async () => {
     if (!cloudConfig.priceSourceUrl) { alert('請輸入連結！'); setShowSettings(true); return; }
     setIsUpdatingPrices(true);
@@ -286,10 +353,37 @@ const App: React.FC = () => {
         const text = await res.text();
         const rows = text.split('\n').map(r => r.split(','));
         const priceMap = new Map<string, number>();
-        rows.forEach(row => { if (row.length >= 2) { const code = row[0].trim(); const price = parseFloat(row[1].trim()); if (code && !isNaN(price)) priceMap.set(code, price); } });
-        setEtfs(prev => prev.map(e => priceMap.has(e.code || e.id) ? { ...e, currentPrice: priceMap.get(e.code || e.id)! } : e));
-        alert('行情更新成功！');
+        const dateMap = new Map<string, {ex: string, pay: string}>();
+
+        rows.forEach(row => { 
+            if (row.length >= 2) { 
+                const code = row[0].trim(); 
+                const price = parseFloat(row[1].trim()); 
+                if (code && !isNaN(price)) priceMap.set(code, price);
+                // 假設 CSV 有第 3, 4 欄是除息日和發放日 (Optional)
+                if (row[2] && row[3]) dateMap.set(code, {ex: row[2].trim(), pay: row[3].trim()});
+            } 
+        });
+
+        setEtfs(prev => prev.map(e => {
+            const p = priceMap.get(e.code || e.id);
+            const d = dateMap.get(e.code || e.id);
+            return { 
+                ...e, 
+                currentPrice: p !== undefined ? p : e.currentPrice,
+                exDate: d ? d.ex : e.exDate,
+                payDate: d ? d.pay : e.payDate
+            };
+        }));
+        alert('行情與日期更新成功！');
     } catch (e) { alert('更新失敗'); } finally { setIsUpdatingPrices(false); }
+  };
+
+  const handleReset = () => {
+      if(confirm('確定重置為預設資料 (含00878等)？')) {
+          setEtfs(TONY_DEFAULT_ETFS);
+          window.location.reload();
+      }
   };
 
   if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-sans"><Loader2 className="animate-spin mr-2"/> 雲端同步中...</div>;
@@ -298,7 +392,7 @@ const App: React.FC = () => {
     <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V64</h1>
+          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V72</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400"/> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400"/> : <WifiOff size={12} className="text-slate-500"/>}
@@ -309,6 +403,7 @@ const App: React.FC = () => {
         <div className="flex gap-2">
             <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded border border-slate-700 text-emerald-400 hover:bg-emerald-900/30 transition-all">{isUpdatingPrices ? <Loader2 className="animate-spin" size={18}/> : <RefreshCw size={18}/>}</button>
             <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded border border-slate-700 hover:bg-slate-700 transition-all"><Settings size={18}/></button>
+            <button onClick={handleReset} className="p-2 bg-slate-800 rounded border border-slate-700 text-red-400 hover:bg-red-900/30 transition-all"><RotateCcw size={18}/></button>
             <input type="file" ref={fileInputRef} onChange={(e) => {
                 const f = e.target.files?.[0]; if(!f) return;
                 const r = new FileReader(); r.onload = (ev) => {
@@ -354,18 +449,25 @@ const App: React.FC = () => {
                   {etfs.map((e, idx) => (
                     <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 relative group">
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all"><button onClick={() => moveEtf(idx, -1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowUp size={14}/></button><button onClick={() => moveEtf(idx, 1)} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ArrowDown size={14}/></button><button onClick={() => removeEtf(e.id)} className="p-1 hover:bg-slate-700 rounded text-red-400"><Trash2 size={14}/></button></div>
-                      <div className="flex justify-between items-center mb-2"><div className="relative"><input type="text" value={e.code || ''} onChange={v => { const n=[...etfs]; n[idx].code=v.target.value; setEtfs(n); }} className="absolute -top-5 left-0 text-[10px] text-slate-500 bg-slate-800 px-1 rounded w-16" placeholder="代號"/><input type="text" value={e.name} onChange={v => { const n=[...etfs]; n[idx].name=v.target.value; setEtfs(n); }} className="bg-transparent font-bold text-white outline-none w-full"/></div><div className="flex gap-1"><button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><ShoppingCart size={14}/></button><button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><List size={14}/></button></div></div>
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="relative"><input type="text" value={e.code || ''} onChange={v => { const n=[...etfs]; n[idx].code=v.target.value; setEtfs(n); }} className="absolute -top-5 left-0 text-[10px] text-slate-500 bg-slate-800 px-1 rounded w-16" placeholder="代號"/><input type="text" value={e.name} onChange={v => { const n=[...etfs]; n[idx].name=v.target.value; setEtfs(n); }} className="bg-transparent font-bold text-white outline-none w-full"/></div>
+                        <div className="flex gap-1"><button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><ShoppingCart size={14}/></button><button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className="p-1 rounded bg-slate-800"><List size={14}/></button></div>
+                      </div>
                       
-                      {/* V63 補回：標的分類 */}
-                      <div className="mb-2">
-                          <select value={e.category || 'dividend'} onChange={(v) => { const n=[...etfs]; n[idx].category=v.target.value as any; setEtfs(n); }} className="bg-slate-800 text-xs text-blue-300 rounded border border-slate-700 px-1 py-0.5 outline-none">
-                              <option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option>
-                          </select>
+                      {/* 除息日顯示與編輯 */}
+                      <div className="grid grid-cols-2 gap-2 mb-2 text-xs">
+                          <div>
+                              <label className="text-slate-500">除息日</label>
+                              <input type="date" value={e.exDate || ''} onChange={v => { const n=[...etfs]; n[idx].exDate=v.target.value; setEtfs(n); }} className="w-full bg-slate-800 rounded p-1 border border-slate-700 text-slate-300"/>
+                          </div>
+                          <div>
+                              <label className="text-slate-500">發放日</label>
+                              <input type="date" value={e.payDate || ''} onChange={v => { const n=[...etfs]; n[idx].payDate=v.target.value; setEtfs(n); }} className="w-full bg-slate-800 rounded p-1 border border-slate-700 text-emerald-400"/>
+                          </div>
                       </div>
 
                       {activeBuyId === e.id && (<div className="mb-3 p-3 bg-emerald-900/20 rounded-lg"><div className="grid grid-cols-2 gap-2 mb-2"><input type="number" placeholder="股數" value={buyForm.shares} onChange={v => setBuyForm({...buyForm, shares: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="單價" value={buyForm.price} onChange={v => setBuyForm({...buyForm, price: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="number" placeholder="融資額" value={buyForm.margin} onChange={v => setBuyForm({...buyForm, margin: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/><input type="date" value={buyForm.date} onChange={v => setBuyForm({...buyForm, date: v.target.value})} className="bg-slate-900 p-1 rounded text-xs"/></div><button onClick={() => { const s = Number(buyForm.shares), p = Number(buyForm.price), m = Number(buyForm.margin); if (!s || !p) return; const nEtfs = [...etfs]; const current = nEtfs[idx]; const newLot = { id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee: Math.floor(s*p*BROKERAGE_RATE), margin: m }; nEtfs[idx] = recalculateEtfStats({ ...current, lots: [...(current.lots||[]), newLot] }); setEtfs(nEtfs); setBuyForm({ shares: '', price: '', date: '', margin: '' }); setActiveBuyId(null); }} className="w-full bg-emerald-600 text-xs py-1 rounded font-bold">確認交易</button></div>)}
                       <div className="grid grid-cols-3 gap-2 text-xs mb-2"><div><label className="text-slate-500">股數</label><div className="pt-1 font-mono">{Number(e.shares).toLocaleString()}</div></div><div><label className="text-slate-500">現價</label><input type="number" value={e.currentPrice} onChange={v => { const n=[...etfs]; n[idx].currentPrice=Number(v.target.value); setEtfs(n); }} className="w-full bg-slate-800 rounded p-1 border border-slate-700 mt-1"/></div><div><label className="text-slate-500">配息</label><div className="flex gap-1 items-center"><input type="number" value={e.dividendPerShare} onChange={v => { const n=[...etfs]; n[idx].dividendPerShare=Number(v.target.value); setEtfs(n); }} className="w-full bg-slate-800 rounded p-1 border border-slate-700 mt-1"/><select value={e.dividendType} onChange={v => { const n=[...etfs]; n[idx].dividendType=v.target.value as any; setEtfs(n); }} className="bg-slate-800 text-[10px] text-blue-400 outline-none"><option value="per_period">次</option><option value="annual">年</option></select></div></div></div>
-                      <div className="flex flex-wrap gap-1 mb-2">{[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (<button key={m} onClick={() => { const n=[...etfs]; const ms = e.payMonths?.includes(m) ? e.payMonths.filter(x=>x!==m) : [...(e.payMonths||[]), m].sort((a,b)=>a-b); n[idx].payMonths=ms; setEtfs(n); }} className={`w-5 h-5 rounded text-[10px] flex items-center justify-center transition-all ${e.payMonths?.includes(m) ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>{m}</button>))}</div>
                       {expandedEtfId === e.id && e.lots && (<div className="mt-3 space-y-1">{e.lots.map(l => (<div key={l.id} className="flex justify-between text-[10px] bg-slate-800 p-1.5 rounded border border-slate-700"><span>{l.date} | {l.shares}股</span><span>{formatMoney(l.price)} (融:{formatMoney(l.margin||0)}) <button onClick={() => { const n = [...etfs]; n[idx].lots = e.lots?.filter(x => x.id !== l.id); n[idx] = recalculateEtfStats(n[idx]); setEtfs(n); }} className="text-red-500 ml-1">×</button></span></div>))}</div>)}
                     </div>
                   ))}
@@ -388,16 +490,18 @@ const App: React.FC = () => {
                 <div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={snowballData}><defs><linearGradient id="cw" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.8}/><stop offset="95%" stopColor="#818cf8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="year" stroke="#94a3b8"/><YAxis stroke="#94a3b8"/><Tooltip formatter={(v:number)=>formatMoney(v)}/><Area type="monotone" dataKey="wealth" stroke="#818cf8" fill="url(#cw)" /></AreaChart></ResponsiveContainer></div>
            </div>
 
-           {/* V63 新增: 實領對帳表格 */}
            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
-             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月對帳明細 (可填實領)</h3>
+             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月對帳明細 (展開看符合資格股數)</h3>
              <table className="w-full text-sm text-left">
                <thead className="text-slate-500 bg-slate-900/50"><tr><th className="p-3">月份</th><th className="p-3">薪資</th><th className="p-3">預估股息</th><th className="p-3 bg-emerald-900/30 text-emerald-400">實領股息(填)</th><th className="p-3">差異</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3">稅金</th><th className="p-3 text-right">淨流</th></tr></thead>
-               <tbody>{monthlyFlows.map(r => (<tr key={r.month} className="border-b border-slate-700/50 hover:bg-slate-700/30 font-mono text-xs">
-                     <td className="p-3 font-bold text-white font-sans">{r.month}月</td>
+               <tbody>
+               {monthlyFlows.map(r => (
+                   <React.Fragment key={r.month}>
+                   <tr className="border-b border-slate-700/50 hover:bg-slate-700/30 font-mono text-xs cursor-pointer" onClick={() => setExpandedMonth(expandedMonth === r.month ? null : r.month)}>
+                     <td className="p-3 font-bold text-white font-sans flex items-center gap-1">{r.month}月 {expandedMonth === r.month ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}</td>
                      <td className="p-3 text-slate-400">{formatMoney(r.salary)}</td>
                      <td className="p-3 text-slate-500">{formatMoney(r.divProjected)}</td>
-                     <td className="p-3 bg-emerald-900/10"><input type="number" placeholder={formatMoney(r.divProjected*0.9789)} value={r.divActual || ''} onChange={(e) => updateActual(r.month, Number(e.target.value))} className="w-20 bg-slate-800 border border-emerald-500/30 rounded px-1 text-emerald-400 font-bold"/></td>
+                     <td className="p-3 bg-emerald-900/10" onClick={e=>e.stopPropagation()}><input type="number" placeholder={formatMoney(r.divProjected*0.9789)} value={r.divActual || ''} onChange={(e) => updateActual(r.month, Number(e.target.value))} className="w-20 bg-slate-800 border border-emerald-500/30 rounded px-1 text-emerald-400 font-bold"/></td>
                      <td className={`p-3 ${r.divDiff < 0 ? 'text-red-400' : 'text-slate-500'}`}>{r.divDiff !== 0 ? formatMoney(r.divDiff) : '-'}</td>
                      <td className="p-3 text-red-400">{formatMoney(r.loanOut)}</td>
                      <td className="p-3 text-orange-400">{formatMoney(r.creditOut)}</td>
@@ -405,9 +509,37 @@ const App: React.FC = () => {
                      <td className="p-3 text-slate-500">{formatMoney(r.life)}</td>
                      <td className="p-3 text-purple-400 text-[10px]">{formatMoney(r.healthTax)}<br/><span className="opacity-50">+{formatMoney(r.incomeTax)}</span></td>
                      <td className={`p-3 text-right font-bold ${r.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
-                   </tr>))}</tbody>
+                   </tr>
+                   {expandedMonth === r.month && (
+                       <tr className="bg-slate-900/80 animate-in fade-in"><td colSpan={11} className="p-3">
+                           <div className="grid grid-cols-2 gap-4 text-xs">
+                               <div>
+                                   <div className="text-emerald-400 font-bold mb-1">💰 預估配息組成 (符合除息資格)</div>
+                                   {r.details?.map((d, i) => (
+                                       <div key={i} className="flex justify-between border-b border-slate-700 py-1">
+                                           <span>{d.name} <span className="text-slate-500 text-[10px]">(除息日 {d.exDate})</span></span>
+                                           <span className="font-mono">{formatMoney(d.amt)} <span className="text-slate-500">({d.qualifiedShares.toLocaleString()}股)</span></span>
+                                       </div>
+                                   ))}
+                                   {(!r.details || r.details.length === 0) && <span className="text-slate-500">本月無符合資格之配息</span>}
+                               </div>
+                               <div>
+                                   <div className="text-orange-400 font-bold mb-1">⚠️ 未符合資格股數 (除息後買進)</div>
+                                   {r.details?.map((d, i) => (
+                                       <div key={i} className="flex justify-between border-b border-slate-700 py-1">
+                                           <span>{d.name}</span>
+                                           <span className="font-mono text-red-400">{(d.totalShares - d.qualifiedShares).toLocaleString()} 股</span>
+                                       </div>
+                                   ))}
+                               </div>
+                           </div>
+                       </td></tr>
+                   )}
+                   </React.Fragment>
+               ))}
+               </tbody>
                <tfoot><tr className="bg-slate-900 font-black text-white">
-                   <td className="p-3 font-sans">年度總計</td><td className="p-3">{formatMoney(monthlyFlows.reduce((a,b)=>a+b.salary,0))}</td><td className="p-3">預:{formatMoney(monthlyFlows.reduce((a,b)=>a+b.divProjected,0))}</td><td className="p-3 text-emerald-400">實:{formatMoney(totalDividend)}</td><td></td><td className="p-3 text-red-400" colSpan={4}>總支出: {formatMoney(totalOut)}</td><td></td><td className={`p-3 text-right font-mono ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
+                   <td className="p-3 font-sans">年度總計</td><td className="p-3">{formatMoney(monthlyFlows.reduce((a,b)=>a+b.salary,0))}</td><td className="p-3">預:{formatMoney(monthlyFlows.reduce((a,b)=>a+b.divProjected,0))}</td><td className="p-3 text-emerald-400">實:{formatMoney(totalDividend)}</td><td></td><td className="p-3 text-red-400" colSpan={4}>總支出: {formatMoney(totalOut)}</td><td className={`p-3 text-right font-mono ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</td>
                </tr></tfoot>
              </table>
            </div>
@@ -428,7 +560,6 @@ const App: React.FC = () => {
                     <div><label className="text-slate-400">主動%</label><input type="number" value={allocation.activeRatio} onChange={e => setAllocation({...allocation, activeRatio: Number(e.target.value)})} className="w-full bg-slate-800 p-1.5 rounded"/></div>
                 </div>
 
-                {/* V61 補回: 稅務設定 */}
                 <div className="pt-4 border-t border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div><h4 className="text-yellow-400 font-bold mb-2">綜所稅試算參數 (2025)</h4>
                         <div className="space-y-2 p-3 bg-yellow-900/20 rounded-xl border border-yellow-700/50">
