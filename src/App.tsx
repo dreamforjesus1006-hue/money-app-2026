@@ -22,16 +22,14 @@ const COLLECTION_NAME = "portfolios";
 const DOCUMENT_ID = "tony1006";
 
 // ==========================================
-// 2. 定義介面 & 您的專屬預設資料
+// 2. 定義介面
 // ==========================================
 interface Lot { id: string; date: string; shares: number; price: number; fee?: number; margin?: number; }
-// V75 新增: 配息事件介面
 interface DividendEvent { id: string; name: string; exDate: string; payDate: string; amount: number; isActual: boolean; }
 interface ETF { 
     id: string; code?: string; name: string; shares: number; costPrice: number; currentPrice: number; 
     dividendPerShare: number; dividendType?: 'annual' | 'per_period'; payMonths?: number[]; 
     category: 'dividend' | 'hedging' | 'active'; marginLoanAmount?: number; marginInterestRate?: number; lots?: Lot[];
-    // V75: 每個 ETF 都有自己的年度配息行事曆
     schedule?: DividendEvent[];
 }
 interface Loan { id: string; name: string; principal: number; rate1: number; rate1Months: number; rate2: number; totalMonths: number; paidMonths: number; gracePeriod: number; startDate?: string; type: string; }
@@ -44,80 +42,18 @@ interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingR
 interface CloudConfig { priceSourceUrl: string; enabled: boolean; }
 interface ActualDetails { [key: string]: number; } 
 
-// ★★★ V75: 預設資料 (含 2026 行事曆) ★★★
-// 為了演示，這裡先幫您把 Q1 填準，Q2-Q4 填預估值
+// V76: 預設空資料 (避免覆蓋邏輯錯誤，主要依賴 initSchedule)
 const TONY_DEFAULT_ETFS: ETF[] = [
-    { 
-        id: '0056', code: '0056', name: '元大高股息', shares: 151000, costPrice: 36.61, currentPrice: 38.05, 
-        dividendPerShare: 0.866, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'dividend',
-        schedule: [
-            { id: 'q1', name: '2026 Q1', exDate: '2026-01-22', payDate: '2026-02-11', amount: 0.866, isActual: true },
-            { id: 'q2', name: '2026 Q2', exDate: '2026-04-18', payDate: '2026-05-15', amount: 0.8, isActual: false },
-            { id: 'q3', name: '2026 Q3', exDate: '2026-07-18', payDate: '2026-08-15', amount: 0.8, isActual: false },
-            { id: 'q4', name: '2026 Q4', exDate: '2026-10-18', payDate: '2026-11-15', amount: 0.8, isActual: false },
-        ]
-    },
-    { 
-        id: '00878', code: '00878', name: '國泰永續高股息', shares: 50000, costPrice: 22.85, currentPrice: 23.08, 
-        dividendPerShare: 0.42, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'dividend',
-        schedule: [
-            { id: 'q1', name: '2026 Q1', exDate: '2026-02-26', payDate: '2026-03-23', amount: 0.42, isActual: true },
-            { id: 'q2', name: '2026 Q2', exDate: '2026-05-18', payDate: '2026-06-15', amount: 0.4, isActual: false },
-            { id: 'q3', name: '2026 Q3', exDate: '2026-08-18', payDate: '2026-09-15', amount: 0.4, isActual: false },
-            { id: 'q4', name: '2026 Q4', exDate: '2026-11-18', payDate: '2026-12-15', amount: 0.4, isActual: false },
-        ]
-    },
-    { 
-        id: '00919', code: '00919', name: '群益精選高息', shares: 140000, costPrice: 23.15, currentPrice: 23.54, 
-        dividendPerShare: 0.54, dividendType: 'per_period', payMonths: [4,7,10,1], category: 'dividend',
-        schedule: [
-            { id: 'q1', name: '2026 Q1', exDate: '2026-03-16', payDate: '2026-04-15', amount: 0.54, isActual: false }, // 預估
-            { id: 'q2', name: '2026 Q2', exDate: '2026-06-16', payDate: '2026-07-15', amount: 0.54, isActual: false },
-            { id: 'q3', name: '2026 Q3', exDate: '2026-09-16', payDate: '2026-10-15', amount: 0.54, isActual: false },
-            { id: 'q4', name: '2026 Q4', exDate: '2026-12-16', payDate: '2027-01-15', amount: 0.54, isActual: false },
-        ]
-    },
-    { 
-        id: '00981A', code: '00981A', name: '主動統一台股增長', shares: 70000, costPrice: 17.96, currentPrice: 18.34, 
-        dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,4,7,10], category: 'active',
-        schedule: [
-            { id: 'q1', name: '2026 Q1', exDate: '2026-03-16', payDate: '2026-04-15', amount: 0.4, isActual: false },
-            { id: 'q2', name: '2026 Q2', exDate: '2026-06-16', payDate: '2026-07-15', amount: 0.4, isActual: false },
-            { id: 'q3', name: '2026 Q3', exDate: '2026-09-16', payDate: '2026-10-15', amount: 0.4, isActual: false },
-            { id: 'q4', name: '2026 Q4', exDate: '2026-12-16', payDate: '2027-01-15', amount: 0.4, isActual: false },
-        ]
-    },
-    { 
-        id: '00982A', code: '00982A', name: '群益主動強棒', shares: 450000, costPrice: 14.62, currentPrice: 15.39, 
-        dividendPerShare: 0.377, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'active',
-        schedule: [
-            { id: 'q1', name: '2026 Q1', exDate: '2026-02-26', payDate: '2026-03-25', amount: 0.377, isActual: true },
-            { id: 'q2', name: '2026 Q2', exDate: '2026-05-20', payDate: '2026-06-20', amount: 0.3, isActual: false },
-            { id: 'q3', name: '2026 Q3', exDate: '2026-08-20', payDate: '2026-09-20', amount: 0.3, isActual: false },
-            { id: 'q4', name: '2026 Q4', exDate: '2026-11-20', payDate: '2026-12-20', amount: 0.3, isActual: false },
-        ]
-    },
-    { 
-        id: '00991A', code: '00991A', name: '主動復華未來50', shares: 70000, costPrice: 11.7, currentPrice: 11.61, 
-        dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,7], category: 'active',
-        schedule: [
-            { id: 'h1', name: '2026 H1', exDate: '2026-01-18', payDate: '2026-02-20', amount: 0.4, isActual: false }, // 假設半年配
-            { id: 'h2', name: '2026 H2', exDate: '2026-07-18', payDate: '2026-08-20', amount: 0.4, isActual: false },
-        ]
-    },
-    { 
-        id: '00992A', code: '00992A', name: '主動群益科技創新', shares: 70000, costPrice: 11.37, currentPrice: 11.54, 
-        dividendPerShare: 0.2, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'active',
-        schedule: [
-            { id: 'q1', name: '2026 Q1', exDate: '2026-01-20', payDate: '2026-02-15', amount: 0.2, isActual: false },
-            { id: 'q2', name: '2026 Q2', exDate: '2026-04-20', payDate: '2026-05-15', amount: 0.2, isActual: false },
-            { id: 'q3', name: '2026 Q3', exDate: '2026-07-20', payDate: '2026-08-15', amount: 0.2, isActual: false },
-            { id: 'q4', name: '2026 Q4', exDate: '2026-10-20', payDate: '2026-11-15', amount: 0.2, isActual: false },
-        ]
-    },
-    { id: '00635U', code: '00635U', name: '期元大S&P黃金', shares: 1000, costPrice: 51.52, currentPrice: 52.95, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging', schedule: [] },
-    { id: '00738U', code: '00738U', name: '期元大道瓊白銀', shares: 1000, costPrice: 62.19, currentPrice: 65.85, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging', schedule: [] },
-    { id: 'GOLD', code: 'GOLD', name: '實體黃金 (克)', shares: 72.2, costPrice: 4806.1, currentPrice: 5047, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging', schedule: [] }
+    { id: '0056', code: '0056', name: '元大高股息', shares: 151000, costPrice: 36.61, currentPrice: 38.05, dividendPerShare: 0.866, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'dividend' },
+    { id: '00878', code: '00878', name: '國泰永續高股息', shares: 50000, costPrice: 22.85, currentPrice: 23.08, dividendPerShare: 0.42, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'dividend' },
+    { id: '00919', code: '00919', name: '群益精選高息', shares: 140000, costPrice: 23.15, currentPrice: 23.54, dividendPerShare: 0.54, dividendType: 'per_period', payMonths: [4,7,10,1], category: 'dividend' },
+    { id: '00981A', code: '00981A', name: '主動統一台股增長', shares: 70000, costPrice: 17.96, currentPrice: 18.34, dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,4,7,10], category: 'active' },
+    { id: '00982A', code: '00982A', name: '群益主動強棒', shares: 450000, costPrice: 14.62, currentPrice: 15.39, dividendPerShare: 0.377, dividendType: 'per_period', payMonths: [3,6,9,12], category: 'active' },
+    { id: '00991A', code: '00991A', name: '主動復華未來50', shares: 70000, costPrice: 11.7, currentPrice: 11.61, dividendPerShare: 0.4, dividendType: 'per_period', payMonths: [1,7], category: 'active' },
+    { id: '00992A', code: '00992A', name: '主動群益科技創新', shares: 70000, costPrice: 11.37, currentPrice: 11.54, dividendPerShare: 0.2, dividendType: 'per_period', payMonths: [2,5,8,11], category: 'active' },
+    { id: '00635U', code: '00635U', name: '期元大S&P黃金', shares: 1000, costPrice: 51.52, currentPrice: 52.95, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging' },
+    { id: '00738U', code: '00738U', name: '期元大道瓊白銀', shares: 1000, costPrice: 62.19, currentPrice: 65.85, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging' },
+    { id: 'GOLD', code: 'GOLD', name: '實體黃金 (克)', shares: 72.2, costPrice: 4806.1, currentPrice: 5047, dividendPerShare: 0, dividendType: 'annual', payMonths: [], category: 'hedging' }
 ];
 
 const BROKERAGE_RATE = 0.001425;
@@ -167,13 +103,9 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     
     let annualDividendProjected = 0;
     etfs.forEach(e => {
-        // V75: 年度總股息改用行事曆加總
         if (e.schedule && e.schedule.length > 0) {
-            e.schedule.forEach(event => {
-                annualDividendProjected += Number(e.shares) * event.amount;
-            });
+            e.schedule.forEach(event => { annualDividendProjected += Number(e.shares) * event.amount; });
         } else {
-            // 回退舊邏輯
             let payout = Number(e.dividendPerShare);
             if (e.dividendType === 'annual') annualDividendProjected += Number(e.shares) * payout;
             else if (e.payMonths) annualDividendProjected += Number(e.shares) * payout * e.payMonths.length;
@@ -189,30 +121,30 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
         const contributingEtfs: {id:string, name:string, amt:number, qualifiedShares:number, totalShares:number, exDate:string, actual?: number}[] = [];
 
         etfs.forEach(e => {
-            // V75: 核心邏輯 - 遍歷行事曆，找出本月發放的股利
             if (e.schedule && e.schedule.length > 0) {
                 e.schedule.forEach(event => {
-                    const payMonth = parseInt(event.payDate.split('-')[1]);
-                    if (payMonth === m) {
-                        let qualifiedShares = 0;
-                        if (e.lots && e.lots.length > 0) {
-                            e.lots.forEach(lot => { 
-                                if (lot.date < event.exDate) qualifiedShares += Number(lot.shares); 
-                            });
-                        } else { qualifiedShares = Number(e.shares); }
+                    if (event.payDate) {
+                        const payMonth = parseInt(event.payDate.split('-')[1]);
+                        if (payMonth === m) {
+                            let qualifiedShares = 0;
+                            if (e.lots && e.lots.length > 0) {
+                                e.lots.forEach(lot => { 
+                                    if (!event.exDate || lot.date < event.exDate) qualifiedShares += Number(lot.shares); 
+                                });
+                            } else { qualifiedShares = Number(e.shares); }
 
-                        const projectedAmt = Math.floor(qualifiedShares * event.amount);
-                        divInProjected += projectedAmt;
+                            const projectedAmt = Math.floor(qualifiedShares * event.amount);
+                            divInProjected += projectedAmt;
 
-                        const actualKey = `${m}_${e.id}`;
-                        const actualAmt = actualDetails[actualKey] !== undefined ? actualDetails[actualKey] : 0;
-                        if (actualAmt > 0) divInActualTotal += actualAmt;
+                            const actualKey = `${m}_${e.id}`;
+                            const actualAmt = actualDetails[actualKey] !== undefined ? actualDetails[actualKey] : 0;
+                            if (actualAmt > 0) divInActualTotal += actualAmt;
 
-                        contributingEtfs.push({ id: e.id, name: e.name, amt: projectedAmt, qualifiedShares, totalShares: Number(e.shares), exDate: event.exDate, actual: actualAmt });
+                            contributingEtfs.push({ id: e.id, name: e.name, amt: projectedAmt, qualifiedShares, totalShares: Number(e.shares), exDate: event.exDate, actual: actualAmt });
+                        }
                     }
                 });
             } else if (e.payMonths?.includes(m)) {
-                // 舊邏輯 (備用)
                 let payout = Number(e.dividendPerShare);
                 if (e.dividendType === 'annual' && e.payMonths.length > 0) payout /= e.payMonths.length;
                 const projectedAmt = Math.floor(Number(e.shares) * payout);
@@ -229,13 +161,10 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
         const creditOut = Number(creditLoan.principal) > 0 ? Math.floor((Number(creditLoan.principal) * cRate * Math.pow(1 + cRate, Number(creditLoan.totalMonths))) / (Math.pow(1 + cRate, Number(creditLoan.totalMonths)) - 1)) : 0;
         const stockInt = Math.floor((Number(stockLoan.principal) * (Number(stockLoan.rate)/100)/12) + (Number(globalMarginLoan.principal) * (Number(globalMarginLoan.rate)/100)/12));
         const marginInt = etfs.reduce((acc, e) => acc + (Number(e.marginLoanAmount||0) * (Number(e.marginInterestRate||6.5)/100)/12), 0);
-        
         const healthTaxReal = divInActualTotal > 0 ? 0 : healthTaxProjected; 
         
         flows.push({ 
-            month: m, salary: monthlySalary, 
-            divProjected: divInProjected, 
-            divActualTotal: divInActualTotal,
+            month: m, salary: monthlySalary, divProjected: divInProjected, divActualTotal: divInActualTotal,
             loanOut, creditOut, stockInt: stockInt + marginInt, life: Number(taxStatus.livingExpenses), 
             healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact,
             net: monthlySalary + divUsed - loanOut - creditOut - (stockInt + marginInt) - Number(taxStatus.livingExpenses) - healthTaxReal - monthlyIncomeTaxImpact,
@@ -294,7 +223,7 @@ const App: React.FC = () => {
   const [activeBuyId, setActiveBuyId] = useState<string | null>(null);
   const [buyForm, setBuyForm] = useState({ shares: '', price: '', date: '', margin: '' });
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
-  const [showCalendar, setShowCalendar] = useState<string | null>(null); // V75: 控制行事曆 Modal
+  const [showCalendar, setShowCalendar] = useState<string | null>(null); 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -308,9 +237,7 @@ const App: React.FC = () => {
         if(d.taxStatus) setTaxStatus(d.taxStatus); if(d.allocation) setAllocation(d.allocation);
         if(d.cloudConfig) setCloudConfig(d.cloudConfig); 
         if(d.actualDetails) setActualDetails(d.actualDetails); else if (d.actuals) setActualDetails(d.actuals); 
-      } else {
-          setEtfs(TONY_DEFAULT_ETFS);
-      }
+      } else { setEtfs(TONY_DEFAULT_ETFS); }
       setIsInitializing(false);
     });
   }, []);
@@ -390,6 +317,18 @@ const App: React.FC = () => {
       }
   };
 
+  // V76: 新增初始化行事曆功能
+  const initSchedule = (index: number) => {
+      const n = [...etfs];
+      n[index].schedule = [
+          { id: 'q1', name: '2026 Q1', exDate: '', payDate: '', amount: 0, isActual: false },
+          { id: 'q2', name: '2026 Q2', exDate: '', payDate: '', amount: 0, isActual: false },
+          { id: 'q3', name: '2026 Q3', exDate: '', payDate: '', amount: 0, isActual: false },
+          { id: 'q4', name: '2026 Q4', exDate: '', payDate: '', amount: 0, isActual: false },
+      ];
+      setEtfs(n);
+  };
+
   const handleUpdatePrices = async () => {
     if (!cloudConfig.priceSourceUrl) { alert('請輸入連結！'); setShowSettings(true); return; }
     setIsUpdatingPrices(true);
@@ -417,7 +356,7 @@ const App: React.FC = () => {
     <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V75</h1>
+          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator/> 包租唐戰情室 V76</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400"/> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400"/> : <WifiOff size={12} className="text-slate-500"/>}
@@ -489,7 +428,7 @@ const App: React.FC = () => {
                           </select>
                       </div>
 
-                      {/* V75: 行事曆設定 Modal */}
+                      {/* V76: 修正行事曆顯示邏輯 */}
                       {showCalendar === e.id && (
                           <div className="mb-3 p-3 bg-slate-800 border border-emerald-500/50 rounded-lg animate-in slide-in-from-top-2">
                               <div className="text-xs font-bold text-emerald-400 mb-2 flex justify-between items-center">
@@ -497,15 +436,26 @@ const App: React.FC = () => {
                                   <button onClick={()=>setShowCalendar(null)} className="text-slate-500 hover:text-white"><X size={14}/></button>
                               </div>
                               <div className="space-y-2">
-                                  {e.schedule?.map((event, eventIdx) => (
-                                      <div key={event.id} className="grid grid-cols-7 gap-1 text-[10px] items-center">
-                                          <div className="col-span-1 text-slate-400">{event.name}</div>
-                                          <div className="col-span-2"><input type="date" value={event.exDate} onChange={v => updateSchedule(idx, eventIdx, 'exDate', v.target.value)} className="w-full bg-slate-900 rounded px-1 text-slate-300"/></div>
-                                          <div className="col-span-2"><input type="date" value={event.payDate} onChange={v => updateSchedule(idx, eventIdx, 'payDate', v.target.value)} className="w-full bg-slate-900 rounded px-1 text-emerald-300"/></div>
-                                          <div className="col-span-2"><input type="number" step="0.01" value={event.amount} onChange={v => updateSchedule(idx, eventIdx, 'amount', Number(v.target.value))} className="w-full bg-slate-900 rounded px-1 text-right text-yellow-300"/></div>
+                                  {e.schedule && e.schedule.length > 0 ? (
+                                      e.schedule.map((event, eventIdx) => (
+                                          <div key={event.id} className="grid grid-cols-7 gap-1 text-[10px] items-center">
+                                              <div className="col-span-1 text-slate-400">{event.name}</div>
+                                              <div className="col-span-2"><input type="date" value={event.exDate} onChange={v => updateSchedule(idx, eventIdx, 'exDate', v.target.value)} className="w-full bg-slate-900 rounded px-1 text-slate-300"/></div>
+                                              <div className="col-span-2"><input type="date" value={event.payDate} onChange={v => updateSchedule(idx, eventIdx, 'payDate', v.target.value)} className="w-full bg-slate-900 rounded px-1 text-emerald-300"/></div>
+                                              <div className="col-span-2"><input type="number" step="0.01" value={event.amount} onChange={v => updateSchedule(idx, eventIdx, 'amount', Number(v.target.value))} className="w-full bg-slate-900 rounded px-1 text-right text-yellow-300"/></div>
+                                          </div>
+                                      ))
+                                  ) : (
+                                      <div className="text-center py-4">
+                                          <div className="text-xs text-slate-500 mb-2">此標的尚無行事曆設定</div>
+                                          <button 
+                                              onClick={() => initSchedule(idx)} 
+                                              className="px-3 py-1.5 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-500 transition-all shadow-lg"
+                                          >
+                                              ➕ 建立 2026 季度行事曆
+                                          </button>
                                       </div>
-                                  ))}
-                                  {(!e.schedule || e.schedule.length === 0) && <div className="text-xs text-slate-500 text-center py-2">此標的尚無行事曆設定</div>}
+                                  )}
                               </div>
                           </div>
                       )}
@@ -538,7 +488,7 @@ const App: React.FC = () => {
            <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
              <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white"><Calendar className="text-blue-400"/> 每月對帳明細 (可填實領)</h3>
              <table className="w-full text-sm text-left">
-               <thead className="text-slate-500 bg-slate-900/50"><tr><th className="p-3">月份</th><th className="p-3">薪資</th><th className="p-3">預估股息</th><th className="p-3 bg-emerald-900/30 text-emerald-400">實領股息(填)</th><th className="p-3">差異</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3">稅金</th><th className="p-3 text-right">淨流</th></tr></thead>
+               <thead className="text-slate-500 bg-slate-900/50"><tr><th className="p-3">月份</th><th className="p-3">薪資</th><th className="p-3">預估股息</th><th className="p-3 bg-emerald-900/30 text-emerald-400">總實領</th><th className="p-3">差異</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3">稅金</th><th className="p-3 text-right">淨流</th></tr></thead>
                <tbody>
                {monthlyFlows.map(r => (
                    <React.Fragment key={r.month}>
