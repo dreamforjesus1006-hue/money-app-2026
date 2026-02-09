@@ -311,7 +311,7 @@ const generateCashFlow = (
           const payMonth = parseInt(event.payDate.split('-')[1] || '', 10);
           if (!Number.isFinite(payMonth) || payMonth !== m) return;
 
-          // 除息資格：用 Date 比較，避免字串比較踩雷
+          // 除息資格：用 Date 比較
           const exT = toTime(event.exDate);
           let qualifiedShares = 0;
 
@@ -319,7 +319,7 @@ const generateCashFlow = (
             e.lots.forEach((lot) => {
               const lotT = toTime(lot.date);
               if (!Number.isFinite(exT)) {
-                // 沒填除息日：視為都算（避免你還沒填日子就變 0）
+                // 沒填除息日：視為都算
                 qualifiedShares += safeNum(lot.shares);
               } else if (Number.isFinite(lotT) && lotT < exT) {
                 qualifiedShares += safeNum(lot.shares);
@@ -369,7 +369,7 @@ const generateCashFlow = (
     let loanOut = 0;
     loans.forEach((l) => (loanOut += calculateLoanPayment(l)));
 
-    // 信貸：用剩餘期數（避免 paidMonths > 0 還用 totalMonths 造成怪怪）
+    // 信貸：用剩餘期數
     const creditPrincipal = safeNum(creditLoan.principal);
     const creditRate = safeNum(creditLoan.rate) / 100 / 12;
     const creditRemain = Math.max(0, safeNum(creditLoan.totalMonths) - safeNum(creditLoan.paidMonths));
@@ -400,7 +400,7 @@ const generateCashFlow = (
       month: m,
       salary: monthlySalary,
       divProjected: divInProjected,
-      divActualTotal,
+      divActualTotal: divInActualTotal, // ✅ 這裡修正了：正確賦值
       loanOut,
       creditOut,
       stockInt: stockInt + marginInt,
@@ -424,7 +424,7 @@ const generateCashFlow = (
 };
 
 // ==========================================
-// 5. Firebase 初始化（避免 HMR 重複 init）
+// 5. Firebase 初始化
 // ==========================================
 let db: any = null;
 try {
@@ -435,7 +435,7 @@ try {
 }
 
 // ==========================================
-// 6. StorageService（穩定版）
+// 6. StorageService
 // ==========================================
 const withMeta = (payload: Omit<PersistedPayload, '_meta'>): PersistedPayload => ({
   ...payload,
@@ -471,15 +471,11 @@ const sanitizePayload = (d: any): PersistedPayload => {
 const StorageService = {
   saveData: async (data: Omit<PersistedPayload, '_meta'>) => {
     const payload = withMeta(data);
-
-    // 1) 本機先寫，確保至少不丟
     try {
       localStorage.setItem(LOCAL_KEY, JSON.stringify(payload));
     } catch (e) {
       console.error('Local save failed:', e);
     }
-
-    // 2) 雲端嘗試寫入（失敗也不炸）
     let cloudOk = false;
     if (db) {
       try {
@@ -498,27 +494,19 @@ const StorageService = {
         const raw = localStorage.getItem(LOCAL_KEY);
         return raw ? JSON.parse(raw) : null;
       } catch (e) {
-        console.error('Local parse failed:', e);
         return null;
       }
     };
-
     const local = readLocal();
-
     let cloud: any = null;
     if (db) {
       try {
         const snap = await getDoc(doc(db, COLLECTION_NAME, DOCUMENT_ID));
         cloud = snap.exists() ? snap.data() : null;
-      } catch (e) {
-        console.error('Cloud load failed:', e);
-      }
+      } catch (e) {}
     }
-
-    // 選最新（updatedAt）
     const pickCloud = getUpdatedAt(cloud) >= getUpdatedAt(local);
     const picked = (pickCloud ? cloud : local) || null;
-
     return {
       data: picked ? sanitizePayload(picked) : null,
       source: picked ? (pickCloud ? 'cloud' : 'local') : 'none',
@@ -543,11 +531,10 @@ const StorageService = {
 };
 
 // ==========================================
-// 7. CSV 更新行情（容錯）
+// 7. CSV 更新行情
 // ==========================================
 const normalizeSheetUrl = (url: string) => {
   if (!url) return url;
-  // 若使用者貼的是 /edit 連結，嘗試轉成 export csv（簡化踩雷）
   if (url.includes('/spreadsheets/') && url.includes('/edit')) {
     return url.replace(/\/edit.*$/, '/export?format=csv');
   }
@@ -560,7 +547,6 @@ const parseCsvPriceMap = (text: string) => {
     .split(/\r?\n/)
     .map((r) => r.split(',').map((x) => x.trim()))
     .filter((r) => r.length >= 2 && r[0]);
-
   const map = new Map<string, number>();
   rows.forEach((row) => {
     const code = row[0];
@@ -600,11 +586,9 @@ const App: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 初始化
   useEffect(() => {
     StorageService.loadData().then((res) => {
       setDataSrc(res.source);
-
       if (res.data) {
         const d = res.data;
         setEtfs(d.etfs?.length ? d.etfs : TONY_DEFAULT_ETFS);
@@ -619,15 +603,12 @@ const App: React.FC = () => {
       } else {
         setEtfs(TONY_DEFAULT_ETFS);
       }
-
       setIsInitializing(false);
     });
   }, []);
 
-  // 自動存檔（容錯）
   useEffect(() => {
     if (isInitializing) return;
-
     setSaveStatus('saving');
     const t = setTimeout(async () => {
       try {
@@ -642,16 +623,13 @@ const App: React.FC = () => {
           cloudConfig,
           actualDetails,
         });
-
         setDataSrc(res.cloudOk ? 'cloud' : 'local');
         setSaveStatus(res.cloudOk ? 'saved' : 'error');
         setTimeout(() => setSaveStatus('idle'), 2000);
       } catch (e) {
-        console.error(e);
         setSaveStatus('error');
       }
     }, 1200);
-
     return () => clearTimeout(t);
   }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, actualDetails, isInitializing]);
 
@@ -668,17 +646,14 @@ const App: React.FC = () => {
   const totalValue = etfs.reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice), 0);
   const totalStockDebt =
     safeNum(stockLoan.principal) + safeNum(globalMarginLoan.principal) + etfs.reduce((a, e) => a + safeNum(e.marginLoanAmount), 0);
-
   const currentMaintenance = totalStockDebt === 0 ? 999 : (totalValue / totalStockDebt) * 100;
 
   const actualDiv = etfs
     .filter((e) => e.category === 'dividend')
     .reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice) - safeNum(e.marginLoanAmount), 0);
-
   const actualHedge = etfs
     .filter((e) => e.category === 'hedging')
     .reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice) - safeNum(e.marginLoanAmount), 0);
-
   const actualAct = etfs
     .filter((e) => e.category === 'active')
     .reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice) - safeNum(e.marginLoanAmount), 0);
@@ -728,7 +703,6 @@ const App: React.FC = () => {
     setLoans((prev) => {
       const n = [...prev];
       if (!n[i]) return prev;
-
       if (f === 'startDate' && v) {
         const start = new Date(v);
         const now = new Date();
@@ -781,17 +755,14 @@ const App: React.FC = () => {
       const res = await fetch(normalizeSheetUrl(cloudConfig.priceSourceUrl));
       const text = await res.text();
       const priceMap = parseCsvPriceMap(text);
-
       setEtfs((prev) =>
         prev.map((e) => {
           const key = (e.code || e.id || '').trim();
           return priceMap.has(key) ? { ...e, currentPrice: priceMap.get(key)! } : e;
         })
       );
-
       alert('行情更新成功！');
     } catch (e) {
-      console.error(e);
       alert('更新失敗');
     } finally {
       setIsUpdatingPrices(false);
@@ -800,10 +771,7 @@ const App: React.FC = () => {
 
   const handleReset = async () => {
     if (!confirm('確定重置為預設資料？（會清除本機資料，並以預設資料覆蓋儲存）')) return;
-
-    // 清本機 + 回到預設狀態
     StorageService.clearLocal();
-
     setEtfs(TONY_DEFAULT_ETFS);
     setLoans([]);
     setStockLoan(DEFAULT_STOCK_LOAN);
@@ -813,8 +781,6 @@ const App: React.FC = () => {
     setAllocation(DEFAULT_ALLOC);
     setCloudConfig(DEFAULT_CLOUD);
     setActualDetails({});
-
-    // 立刻存一次（避免你下一次開啟又被舊資料蓋回）
     try {
       const res = await StorageService.saveData({
         etfs: TONY_DEFAULT_ETFS,
@@ -831,7 +797,6 @@ const App: React.FC = () => {
       setSaveStatus(res.cloudOk ? 'saved' : 'error');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (e) {
-      console.error(e);
       setSaveStatus('error');
     }
   };
@@ -851,7 +816,6 @@ const App: React.FC = () => {
           <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2">
             <Calculator /> 包租唐戰情室 V76
           </h1>
-
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
               {saveStatus === 'saving' ? (
@@ -870,7 +834,6 @@ const App: React.FC = () => {
             </span>
           </div>
         </div>
-
         <div className="flex gap-2">
           <button
             onClick={handleUpdatePrices}
@@ -879,7 +842,6 @@ const App: React.FC = () => {
           >
             {isUpdatingPrices ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
           </button>
-
           <button
             onClick={() => setShowSettings(true)}
             className="p-2 bg-slate-800 rounded border border-slate-700 hover:bg-slate-700 transition-all"
@@ -887,7 +849,6 @@ const App: React.FC = () => {
           >
             <Settings size={18} />
           </button>
-
           <button
             onClick={handleReset}
             className="p-2 bg-slate-800 rounded border border-slate-700 text-red-400 hover:bg-red-900/30 transition-all"
@@ -895,20 +856,17 @@ const App: React.FC = () => {
           >
             <RotateCcw size={18} />
           </button>
-
           <input
             type="file"
             ref={fileInputRef}
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (!f) return;
-
               const r = new FileReader();
               r.onload = (ev) => {
                 try {
                   const raw = JSON.parse(ev.target?.result as string);
                   const d = sanitizePayload(raw);
-
                   setEtfs(d.etfs);
                   setLoans(d.loans || []);
                   setStockLoan(d.stockLoan || DEFAULT_STOCK_LOAN);
@@ -920,7 +878,6 @@ const App: React.FC = () => {
                   setActualDetails(d.actualDetails || {});
                   alert('匯入成功');
                 } catch (err) {
-                  console.error(err);
                   alert('格式錯誤');
                 }
               };
@@ -929,7 +886,6 @@ const App: React.FC = () => {
             className="hidden"
             accept=".json"
           />
-
           <button
             onClick={() => fileInputRef.current?.click()}
             className="p-2 bg-slate-800 rounded border border-slate-700 text-blue-400"
@@ -937,7 +893,6 @@ const App: React.FC = () => {
           >
             <Upload size={18} />
           </button>
-
           <button
             onClick={() =>
               StorageService.exportToFile({
@@ -961,7 +916,6 @@ const App: React.FC = () => {
       </header>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        {/* Left Column */}
         <div className="xl:col-span-4 space-y-6">
           <div className="bg-slate-800 p-6 rounded-2xl border border-emerald-500/50 shadow-xl relative overflow-hidden">
             <div className="text-slate-400 text-[10px] font-bold uppercase mb-1">玩家等級</div>
@@ -1018,7 +972,6 @@ const App: React.FC = () => {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between text-xs mb-1">
@@ -1026,42 +979,25 @@ const App: React.FC = () => {
                   <span>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.dividendRatio) / 100 - actualDiv))}</span>
                 </div>
                 <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-emerald-500 h-full"
-                    style={{
-                      width: `${Math.min(100, (actualDiv / ((allocation.totalFunds * allocation.dividendRatio) / 100 || 1)) * 100)}%`,
-                    }}
-                  />
+                  <div className="bg-emerald-500 h-full" style={{ width: `${Math.min(100, (actualDiv / ((allocation.totalFunds * allocation.dividendRatio) / 100 || 1)) * 100)}%` }} />
                 </div>
               </div>
-
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span>避險型 ({allocation.hedgingRatio}%)</span>
                   <span>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.hedgingRatio) / 100 - actualHedge))}</span>
                 </div>
                 <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-amber-500 h-full"
-                    style={{
-                      width: `${Math.min(100, (actualHedge / ((allocation.totalFunds * allocation.hedgingRatio) / 100 || 1)) * 100)}%`,
-                    }}
-                  />
+                  <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, (actualHedge / ((allocation.totalFunds * allocation.hedgingRatio) / 100 || 1)) * 100)}%` }} />
                 </div>
               </div>
-
               <div>
                 <div className="flex justify-between text-xs mb-1">
                   <span>主動型 ({allocation.activeRatio}%)</span>
                   <span>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.activeRatio) / 100 - actualAct))}</span>
                 </div>
                 <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-purple-500 h-full"
-                    style={{
-                      width: `${Math.min(100, (actualAct / ((allocation.totalFunds * allocation.activeRatio) / 100 || 1)) * 100)}%`,
-                    }}
-                  />
+                  <div className="bg-purple-500 h-full" style={{ width: `${Math.min(100, (actualAct / ((allocation.totalFunds * allocation.activeRatio) / 100 || 1)) * 100)}%` }} />
                 </div>
               </div>
             </div>
@@ -1071,7 +1007,6 @@ const App: React.FC = () => {
             <h2 className="text-lg font-bold mb-4 text-emerald-300 flex items-center gap-2">
               <Activity /> 標的清單
             </h2>
-
             <div className="space-y-4">
               {etfs.map((e, idx) => (
                 <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 relative group">
@@ -1086,28 +1021,22 @@ const App: React.FC = () => {
                       <Trash2 size={14} />
                     </button>
                   </div>
-
                   <div className="flex justify-between items-center mb-2">
                     <div className="relative">
                       <input
                         type="text"
                         value={e.code || ''}
-                        onChange={(v) =>
-                          setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, code: v.target.value } : x)))
-                        }
+                        onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, code: v.target.value } : x)))}
                         className="absolute -top-5 left-0 text-[10px] text-slate-500 bg-slate-800 px-1 rounded w-16"
                         placeholder="代號"
                       />
                       <input
                         type="text"
                         value={e.name}
-                        onChange={(v) =>
-                          setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, name: v.target.value } : x)))
-                        }
+                        onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, name: v.target.value } : x)))}
                         className="bg-transparent font-bold text-white outline-none w-full"
                       />
                     </div>
-
                     <div className="flex gap-1">
                       <button
                         onClick={() => setShowCalendar(showCalendar === e.id ? null : e.id)}
@@ -1124,13 +1053,10 @@ const App: React.FC = () => {
                       </button>
                     </div>
                   </div>
-
                   <div className="mb-2">
                     <select
                       value={e.category || 'dividend'}
-                      onChange={(v) =>
-                        setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, category: v.target.value as any } : x)))
-                      }
+                      onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, category: v.target.value as any } : x)))}
                       className="bg-slate-800 text-xs text-blue-300 rounded border border-slate-700 px-1 py-0.5 outline-none"
                     >
                       <option value="dividend">配息型</option>
@@ -1138,8 +1064,6 @@ const App: React.FC = () => {
                       <option value="active">主動型</option>
                     </select>
                   </div>
-
-                  {/* 行事曆設定 */}
                   {showCalendar === e.id && (
                     <div className="mb-3 p-3 bg-slate-800 border border-emerald-500/50 rounded-lg animate-in slide-in-from-top-2">
                       <div className="text-xs font-bold text-emerald-400 mb-2 flex justify-between items-center">
@@ -1148,7 +1072,6 @@ const App: React.FC = () => {
                           <X size={14} />
                         </button>
                       </div>
-
                       <div className="space-y-2">
                         {e.schedule && e.schedule.length > 0 ? (
                           e.schedule.map((event, eventIdx) => (
@@ -1195,8 +1118,6 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   )}
-
-                  {/* 新增交易 */}
                   {activeBuyId === e.id && (
                     <div className="mb-3 p-3 bg-emerald-900/20 rounded-lg">
                       <div className="grid grid-cols-2 gap-2 mb-2">
@@ -1228,15 +1149,12 @@ const App: React.FC = () => {
                           className="bg-slate-900 p-1 rounded text-xs"
                         />
                       </div>
-
                       <button
                         onClick={() => {
                           const s = safeNum(buyForm.shares);
                           const p = safeNum(buyForm.price);
                           const m = safeNum(buyForm.margin);
-
                           if (!s || !p) return;
-
                           setEtfs((prev) => {
                             const nEtfs = [...prev];
                             const current = nEtfs[idx];
@@ -1251,7 +1169,6 @@ const App: React.FC = () => {
                             nEtfs[idx] = recalculateEtfStats({ ...current, lots: [...(current.lots || []), newLot] });
                             return nEtfs;
                           });
-
                           setBuyForm({ shares: '', price: '', date: '', margin: '' });
                           setActiveBuyId(null);
                         }}
@@ -1261,41 +1178,32 @@ const App: React.FC = () => {
                       </button>
                     </div>
                   )}
-
                   <div className="grid grid-cols-3 gap-2 text-xs mb-2">
                     <div>
                       <label className="text-slate-500">股數</label>
                       <div className="pt-1 font-mono">{safeNum(e.shares).toLocaleString()}</div>
                     </div>
-
                     <div>
                       <label className="text-slate-500">現價</label>
                       <input
                         type="number"
                         value={safeNum(e.currentPrice)}
-                        onChange={(v) =>
-                          setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, currentPrice: safeNum(v.target.value) } : x)))
-                        }
+                        onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, currentPrice: safeNum(v.target.value) } : x)))}
                         className="w-full bg-slate-800 rounded p-1 border border-slate-700 mt-1"
                       />
                     </div>
-
                     <div>
                       <label className="text-slate-500">配息(近一期)</label>
                       <div className="flex gap-1 items-center">
                         <input
                           type="number"
                           value={safeNum(e.dividendPerShare)}
-                          onChange={(v) =>
-                            setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, dividendPerShare: safeNum(v.target.value) } : x)))
-                          }
+                          onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, dividendPerShare: safeNum(v.target.value) } : x)))}
                           className="w-full bg-slate-800 rounded p-1 border border-slate-700 mt-1"
                         />
                         <select
                           value={e.dividendType}
-                          onChange={(v) =>
-                            setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, dividendType: v.target.value as any } : x)))
-                          }
+                          onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, dividendType: v.target.value as any } : x)))}
                           className="bg-slate-800 text-[10px] text-blue-400 outline-none"
                         >
                           <option value="per_period">次</option>
@@ -1304,7 +1212,6 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   </div>
-
                   <div className="flex flex-wrap gap-1 mb-2">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
                       <button
@@ -1327,7 +1234,6 @@ const App: React.FC = () => {
                       </button>
                     ))}
                   </div>
-
                   {expandedEtfId === e.id && e.lots && (
                     <div className="mt-3 space-y-1">
                       {e.lots.map((l) => (
@@ -1358,7 +1264,6 @@ const App: React.FC = () => {
                   )}
                 </div>
               ))}
-
               <button
                 onClick={() =>
                   setEtfs((prev) => [
@@ -1388,7 +1293,6 @@ const App: React.FC = () => {
           </section>
         </div>
 
-        {/* Right Column */}
         <div className="xl:col-span-8 space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg">
@@ -1415,15 +1319,20 @@ const App: React.FC = () => {
                 <TrendingUp className="text-indigo-400" /> 十年財富滾雪球 (含薪資儲蓄)
               </h3>
               <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-600">
-                <button onClick={() => setReinvest(false)} className={`px-3 py-1 text-xs rounded transition-all ${!reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
+                <button
+                  onClick={() => setReinvest(false)}
+                  className={`px-3 py-1 text-xs rounded transition-all ${!reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+                >
                   花掉股息
                 </button>
-                <button onClick={() => setReinvest(true)} className={`px-3 py-1 text-xs rounded transition-all ${reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>
+                <button
+                  onClick={() => setReinvest(true)}
+                  className={`px-3 py-1 text-xs rounded transition-all ${reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+                >
                   複利投入
                 </button>
               </div>
             </div>
-
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={snowballData}>
@@ -1447,7 +1356,6 @@ const App: React.FC = () => {
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-white">
               <Calendar className="text-blue-400" /> 每月對帳明細 (可填實領)
             </h3>
-
             <table className="w-full text-sm text-left">
               <thead className="text-slate-500 bg-slate-900/50">
                 <tr>
@@ -1464,7 +1372,6 @@ const App: React.FC = () => {
                   <th className="p-3 text-right">淨流</th>
                 </tr>
               </thead>
-
               <tbody>
                 {monthlyFlows.map((r) => (
                   <React.Fragment key={r.month}>
@@ -1496,7 +1403,6 @@ const App: React.FC = () => {
                       </td>
                       <td className={`p-3 text-right font-bold ${r.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
                     </tr>
-
                     {expandedMonth === r.month && (
                       <tr className="bg-slate-900/80 animate-in fade-in">
                         <td colSpan={11} className="p-3">
@@ -1505,7 +1411,6 @@ const App: React.FC = () => {
                               👇 輸入各檔 ETF 實領金額 (含稅)：
                               <span className="text-[10px] bg-slate-700 px-1 rounded text-slate-300">系統自動檢查買進日是否符合除息資格</span>
                             </div>
-
                             {r.details?.map((d: any, i: number) => (
                               <div key={i} className="flex justify-between items-center border-b border-slate-700 pb-2">
                                 <div className="w-1/3">
@@ -1519,7 +1424,6 @@ const App: React.FC = () => {
                                     </span>
                                   </div>
                                 </div>
-
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs text-emerald-400">實領:</span>
                                   <input
@@ -1531,11 +1435,9 @@ const App: React.FC = () => {
                                     onClick={(e) => e.stopPropagation()}
                                   />
                                 </div>
-
                                 <div className="text-xs text-slate-500 w-20 text-right">差: {d.actual ? formatMoney(d.actual - Math.floor(d.amt * 0.9789)) : '-'}</div>
                               </div>
                             ))}
-
                             {(!r.details || r.details.length === 0) && <span className="text-slate-500 text-xs">本月無配息紀錄</span>}
                           </div>
                         </td>
@@ -1544,7 +1446,6 @@ const App: React.FC = () => {
                   </React.Fragment>
                 ))}
               </tbody>
-
               <tfoot>
                 <tr className="bg-slate-900 font-black text-white">
                   <td className="p-3 font-sans">年度總計</td>
@@ -1569,7 +1470,6 @@ const App: React.FC = () => {
             <h3 className="text-xl font-bold mb-4 text-white flex items-center gap-2">
               <Settings /> 財務詳細與稅務設定
             </h3>
-
             <div className="space-y-6 text-sm">
               <div>
                 <label className="text-slate-400 block mb-1 font-bold text-emerald-400">Google Sheet CSV 連結</label>
@@ -1580,9 +1480,7 @@ const App: React.FC = () => {
                   className="w-full bg-slate-900 p-2 rounded border border-slate-600 outline-none focus:border-blue-500"
                   placeholder="https://..."
                 />
-                <div className="text-[11px] text-slate-500 mt-1">小提醒：如果你貼的是 Google Sheet /edit 連結，我已自動嘗試轉成 /export?format=csv。</div>
               </div>
-
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-700">
                 <div>
                   <label className="text-slate-400">投資預算</label>
@@ -1621,7 +1519,6 @@ const App: React.FC = () => {
                   />
                 </div>
               </div>
-
               <div className="pt-4 border-t border-slate-700 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="text-yellow-400 font-bold mb-2">綜所稅試算參數 (2025)</h4>
@@ -1635,17 +1532,14 @@ const App: React.FC = () => {
                         className="w-full bg-slate-900 p-1.5 rounded border border-slate-700"
                       />
                     </div>
-
                     <div className="flex items-center gap-2">
                       <input type="checkbox" checked={taxStatus.hasSpouse} onChange={(e) => setTaxStatus({ ...taxStatus, hasSpouse: e.target.checked })} />
                       <label className="text-slate-300">有配偶合併申報</label>
                     </div>
-
                     <div className="flex items-center gap-2">
                       <input type="checkbox" checked={taxStatus.isDisabled} onChange={(e) => setTaxStatus({ ...taxStatus, isDisabled: e.target.checked })} />
                       <label className="text-slate-300">領有身心障礙手冊</label>
                     </div>
-
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="text-slate-500">扶養人數</label>
@@ -1668,7 +1562,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 </div>
-
                 <div>
                   <h4 className="text-blue-400 font-bold mb-2">信貸/不限用途</h4>
                   <div className="space-y-2">
@@ -1692,7 +1585,6 @@ const App: React.FC = () => {
                         />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="text-slate-500 text-[10px]">借貸本金</label>
@@ -1713,7 +1605,6 @@ const App: React.FC = () => {
                         />
                       </div>
                     </div>
-
                     <div>
                       <label className="text-slate-400">每月生活費</label>
                       <input
@@ -1726,10 +1617,8 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-
               <div className="pt-4 border-t border-slate-700">
                 <h4 className="text-emerald-400 font-bold mb-2">房貸進階設定</h4>
-
                 {loans.map((l, i) => (
                   <div key={l.id} className="mb-4 p-4 bg-slate-900/80 rounded-xl border border-slate-600">
                     <div className="grid grid-cols-2 gap-4 mb-3">
@@ -1742,7 +1631,6 @@ const App: React.FC = () => {
                         <input type="number" value={l.principal} onChange={(e) => updateLoan(i, 'principal', safeNum(e.target.value))} className="w-full bg-slate-800 p-1 rounded" />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="text-[10px] text-slate-500">利率1%</label>
@@ -1757,7 +1645,6 @@ const App: React.FC = () => {
                         <input type="number" value={l.rate2} onChange={(e) => updateLoan(i, 'rate2', safeNum(e.target.value))} className="w-full bg-slate-800 p-1 rounded" />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-3 gap-2 mt-2">
                       <div>
                         <label className="text-[10px] text-emerald-400 font-bold">撥款日期</label>
@@ -1772,13 +1659,11 @@ const App: React.FC = () => {
                         <input type="number" value={l.paidMonths} onChange={(e) => updateLoan(i, 'paidMonths', safeNum(e.target.value))} className="w-full bg-slate-800 p-1 rounded" />
                       </div>
                     </div>
-
                     <button onClick={() => setLoans((prev) => prev.filter((x) => x.id !== l.id))} className="text-[10px] text-red-500 mt-2 hover:underline">
                       刪除貸款
                     </button>
                   </div>
                 ))}
-
                 <button
                   onClick={() =>
                     setLoans((prev) => [
@@ -1803,7 +1688,6 @@ const App: React.FC = () => {
                 </button>
               </div>
             </div>
-
             <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-3 bg-blue-600 rounded-xl font-bold shadow-lg hover:bg-blue-500 transition-all">
               儲存關閉並同步
             </button>
