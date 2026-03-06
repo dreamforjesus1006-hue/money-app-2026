@@ -91,7 +91,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 78;
+const APP_SCHEMA_VERSION = 79;
 const LOCAL_KEY = 'baozutang_local';
 
 const TONY_DEFAULT_ETFS: ETF[] = [
@@ -471,7 +471,7 @@ const App: React.FC = () => {
     <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator /> 包租唐戰情室 V78</h1>
+          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator /> 包租唐戰情室 V79</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
@@ -526,10 +526,7 @@ const App: React.FC = () => {
                 return (
                 <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 shadow-sm relative group">
                   
-                  {/* V78: 手機完美佈局 - Header 分上下兩排 */}
                   <div className="flex flex-col gap-3 mb-4">
-                    
-                    {/* 上排: 代號/名稱 + 排序/刪除按鈕 */}
                     <div className="flex justify-between items-start">
                         <div className="flex flex-col gap-1 w-2/3">
                             <input
@@ -554,7 +551,6 @@ const App: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* 下排: 分類選單 + 功能按鈕 (日曆/購物車/明細) */}
                     <div className="flex justify-between items-center border-t border-slate-800 pt-2">
                         <select
                           value={e.category || 'dividend'}
@@ -592,7 +588,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   
-                  {/* V78: 行事曆 Modal 顯示優化 */}
                   {showCalendar === e.id && (
                     <div className="mb-4 p-3 bg-slate-800 border border-emerald-500/50 rounded-lg animate-in slide-in-from-top-2 shadow-lg">
                       <div className="text-xs font-bold text-emerald-400 mb-3 flex justify-between items-center border-b border-emerald-900/50 pb-2">
@@ -621,7 +616,6 @@ const App: React.FC = () => {
                             </div>
                           ))
                         ) : (
-                          // V78: 超明顯的建立按鈕
                           <div className="text-center py-6 bg-slate-900/50 rounded-lg border border-dashed border-slate-700">
                             <div className="text-sm text-slate-400 mb-3">此標的在 {selectedYear} 年尚無行事曆設定</div>
                             <button
@@ -817,7 +811,12 @@ const App: React.FC = () => {
                   <defs><linearGradient id="cw" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.8} /><stop offset="95%" stopColor="#818cf8" stopOpacity={0} /></linearGradient></defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis dataKey="year" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
+                  {/* V79 關鍵修復：加大 Y 軸寬度，並自動轉換成「萬」為單位 */}
+                  <YAxis 
+                    stroke="#94a3b8" 
+                    width={80} 
+                    tickFormatter={(value) => `$${Math.floor(value / 10000)}萬`} 
+                  />
                   <Tooltip formatter={(v: any) => formatMoney(v)} />
                   <Area type="monotone" dataKey="wealth" stroke="#818cf8" fill="url(#cw)" />
                 </AreaChart>
@@ -827,7 +826,6 @@ const App: React.FC = () => {
 
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
             
-            {/* V77: 年份切換器 UI */}
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-bold flex items-center gap-2 text-white">
                 <Calendar className="text-blue-400" /> 每月對帳明細 (可填實領)
