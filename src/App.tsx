@@ -58,7 +58,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 85;
+const APP_SCHEMA_VERSION = 86;
 const LOCAL_KEY = 'baozutang_local';
 
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
@@ -163,11 +163,29 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
       } else if (e.payMonths?.includes(m)) {
         let payout = safeNum(e.dividendPerShare);
         if (e.dividendType === 'annual' && e.payMonths.length > 0) payout /= e.payMonths.length;
-        const projectedAmt = Math.floor(safeNum(e.shares) * payout);
+        
+        // V86 修復：預估配息也會根據交易時間軸計算資格股數
+        let qualifiedSharesEstimate = 0;
+        if (e.lots && e.lots.length > 0) {
+          e.lots.forEach((lot) => {
+            const lotD = new Date(lot.date);
+            if (!isNaN(lotD.getTime())) {
+              if (lotD.getFullYear() < selectedYear || (lotD.getFullYear() === selectedYear && lotD.getMonth() + 1 <= m)) {
+                qualifiedSharesEstimate += safeNum(lot.shares);
+              }
+            } else {
+              qualifiedSharesEstimate += safeNum(lot.shares);
+            }
+          });
+        } else {
+          qualifiedSharesEstimate = safeNum(e.shares);
+        }
+
+        const projectedAmt = Math.floor(qualifiedSharesEstimate * payout);
         divInProjected += projectedAmt;
         const actualAmt = safeNum(actualDetails[`${selectedYear}_${m}_${e.id}`]);
         if (actualAmt > 0) divActualTotal += actualAmt;
-        contributingEtfs.push({ id: e.id, name: e.name, amt: projectedAmt, qualifiedShares: safeNum(e.shares), totalShares: safeNum(e.shares), exDate: '預估', actual: actualAmt });
+        contributingEtfs.push({ id: e.id, name: e.name, amt: projectedAmt, qualifiedShares: qualifiedSharesEstimate, totalShares: safeNum(e.shares), exDate: '預估', actual: actualAmt });
       }
     });
 
@@ -194,16 +212,41 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
       creditOut = creditRate === 0 ? Math.floor(creditPrincipal / totalCreditMonths) : Math.floor((creditPrincipal * creditRate * Math.pow(1 + creditRate, totalCreditMonths)) / (Math.pow(1 + creditRate, totalCreditMonths) - 1));
     }
 
-    const stockInt = Math.floor((safeNum(stockLoan.principal) * (safeNum(stockLoan.rate) / 100)) / 12) + Math.floor((safeNum(globalMarginLoan.principal) * (safeNum(globalMarginLoan.rate) / 100)) / 12);
-    const marginInt = etfs.reduce((acc, e) => acc + (safeNum(e.marginLoanAmount) * (safeNum(e.marginInterestRate, 6.5) / 100)) / 12, 0);
+    // V86 修復：維持利息現在會根據時間軸（交易買進日）精準計算當月有效融資額
+    const staticStockInt = Math.floor((safeNum(stockLoan.principal) * (safeNum(stockLoan.rate) / 100)) / 12) + Math.floor((safeNum(globalMarginLoan.principal) * (safeNum(globalMarginLoan.rate) / 100)) / 12);
+    
+    let dynamicMarginInt = 0;
+    etfs.forEach((e) => {
+      let activeMarginForMonth = 0;
+      if (e.lots && e.lots.length > 0) {
+        e.lots.forEach((lot) => {
+          const lotD = new Date(lot.date);
+          if (!isNaN(lotD.getTime())) {
+            // 如果這筆交易的年份早於當前年份，或同年但月份小於等於當前月份，才計算融資利息
+            if (lotD.getFullYear() < selectedYear || (lotD.getFullYear() === selectedYear && lotD.getMonth() + 1 <= m)) {
+              activeMarginForMonth += safeNum(lot.margin);
+            }
+          } else {
+            activeMarginForMonth += safeNum(lot.margin); // 無效日期則強制納入
+          }
+        });
+      } else {
+        activeMarginForMonth = safeNum(e.marginLoanAmount);
+      }
+      dynamicMarginInt += (activeMarginForMonth * (safeNum(e.marginInterestRate, 6.5) / 100)) / 12;
+    });
+    
+    const marginInt = Math.floor(dynamicMarginInt);
+    const stockIntTotal = staticStockInt + marginInt;
+
     const healthTaxReal = divActualTotal > 0 ? 0 : healthTaxProjected;
     const rec = monthlyRecords[`${selectedYear}_${m}`] || {};
     const otherInc = safeNum(rec.otherIncome);
     const lifeExp = rec.livingExpense !== undefined ? safeNum(rec.livingExpense) : safeNum(taxStatus.livingExpenses);
 
     flows.push({
-      month: m, otherInc, divProjected: divInProjected, divActualTotal, loanOut, creditOut, stockInt: stockInt + marginInt, life: lifeExp, healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact,
-      net: divUsed + otherInc - loanOut - creditOut - (stockInt + marginInt) - lifeExp - healthTaxReal - monthlyIncomeTaxImpact,
+      month: m, otherInc, divProjected: divInProjected, divActualTotal, loanOut, creditOut, stockInt: stockIntTotal, life: lifeExp, healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact,
+      net: divUsed + otherInc - loanOut - creditOut - stockIntTotal - lifeExp - healthTaxReal - monthlyIncomeTaxImpact,
       details: contributingEtfs,
     });
   }
@@ -359,7 +402,6 @@ export default function App() {
   const combatPower = Math.floor(totalValue / 10000 + totalDividend / 12 / 100);
   const fireRatio = totalOut > 0 ? (totalDividend / totalOut) * 100 : 0;
 
-  // V84 遊戲化增強：包含立繪(Avatar)與戰鬥日誌(Combat Log)
   const { currentRank, nextRank, progress, healthGrade, earnedAchievements, avatar, combatLogs } = useMemo(() => {
     let cRank = '理財新手 🌱'; let nRank = '築基騎士 ⚔️'; let prog = 0; let av = '🧑‍🌾';
     if (fireRatio >= 100) { cRank = '財富神祇 🌟'; nRank = 'MAX'; prog = 100; av = '👑'; }
@@ -374,7 +416,6 @@ export default function App() {
     else if (fireRatio >= 30 && currentMaintenance >= 130) grade = 'A';
     else if (fireRatio >= 10) grade = 'B';
 
-    // V84: 加入稀有度樣式 (UR/SSR/SR/R)
     const ach = [];
     if (totalValue >= 20000000) ach.push({ icon: '💎', title: '兩千萬霸主', desc: '總資產突破兩千萬', rarity: 'UR', glow: 'shadow-[0_0_15px_rgba(236,72,153,0.6)] border-pink-500 text-pink-400 bg-pink-900/20' });
     else if (totalValue >= 10000000) ach.push({ icon: '💰', title: '千萬俱樂部', desc: '總資產突破一千萬', rarity: 'SSR', glow: 'shadow-[0_0_15px_rgba(234,179,8,0.6)] border-yellow-500 text-yellow-400 bg-yellow-900/20' });
@@ -383,7 +424,6 @@ export default function App() {
     if (currentMaintenance >= 200 || currentMaintenance === 999) ach.push({ icon: '🛡️', title: '無敵鐵壁', desc: '維持率極度安全', rarity: 'SR', glow: 'border-blue-500 text-blue-400 bg-blue-900/20' });
     if (totalOut > 0 && totalNet > 0) ach.push({ icon: '📈', title: '正向循環', desc: '淨現金流為正數', rarity: 'R', glow: 'border-emerald-500 text-emerald-400 bg-emerald-900/20' });
 
-    // 產生戰鬥日誌
     const logs = [
         `[系統] 玩家【包租唐】登入戰情室，當前總戰力 ${combatPower.toLocaleString()}。`,
         totalNet > 0 ? `[被動技] 資產護盾發動！預計每月淨回血 ${formatMoney(totalNet/12)}。` : `[警告] 現金流失血中，請注意防禦！`,
@@ -392,7 +432,7 @@ export default function App() {
     ];
 
     return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach, avatar: av, combatLogs: logs };
-  }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length]);
+  }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length, combatPower]);
 
   const snowballData = useMemo(() => {
     const avgYield = totalValue > 0 ? totalDividend / totalValue : 0.05;
@@ -508,7 +548,7 @@ export default function App() {
     <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V85</h1>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V86</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1 shadow-inner">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
@@ -529,11 +569,9 @@ export default function App() {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         <div className="xl:col-span-4 space-y-6">
           
-          {/* V84: RPG 角色面板進化 */}
           <div className="bg-slate-900 p-1 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
             <div className="bg-slate-900 p-5 rounded-xl h-full w-full">
               <div className="flex items-center gap-4 mb-4">
-                  {/* 動態立繪 */}
                   <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-slate-700 to-slate-800 flex items-center justify-center text-4xl shadow-inner border-2 border-slate-700 relative">
                       {avatar}
                       <div className="absolute -bottom-2 bg-slate-800 text-[8px] px-2 py-0.5 rounded-full border border-slate-600 font-bold uppercase tracking-wider text-slate-300">LV.{Math.floor(fireRatio/10)}</div>
@@ -564,7 +602,6 @@ export default function App() {
                 <div className="text-center bg-slate-800/50 p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-default"><div className="text-slate-500 text-[9px] mb-1 font-bold">日產金率</div><div className="font-mono font-bold text-yellow-400 text-sm">{formatMoney(totalDividend / 365)}</div></div>
               </div>
 
-              {/* V84 新增: 戰鬥日誌 */}
               <div className="mt-4 bg-slate-950 rounded-lg p-3 border border-slate-800 text-[10px] font-mono overflow-hidden h-24 relative flex flex-col justify-end">
                 <div className="absolute top-2 left-2 text-slate-600 flex items-center gap-1"><MessageSquareText size={10}/> 戰鬥日誌</div>
                 <div className="space-y-1 opacity-80 text-slate-300">
@@ -576,7 +613,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* V84: 稀有度成就牆 */}
           <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl relative">
             <h2 className="text-sm font-bold mb-3 text-yellow-400 flex items-center gap-2"><Trophy size={16}/> 榮譽殿堂 (Trophy Room)</h2>
             <div className="grid grid-cols-2 gap-3">
@@ -740,7 +776,11 @@ export default function App() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis dataKey="year" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} dy={10} />
                   <YAxis stroke="#64748b" width={60} tickFormatter={(value) => `${Math.floor(value / 10000)}W`} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} dx={-10} />
-                  <Tooltip formatter={(v: any) => [formatMoney(v), '預估資產']} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }} itemStyle={{ color: '#38bdf8', fontWeight: 'bold' }} />
+                  <Tooltip 
+                      formatter={(v: any) => [formatMoney(v), '預估資產']} 
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }}
+                      itemStyle={{ color: '#38bdf8', fontWeight: 'bold' }}
+                  />
                   <Area type="monotone" dataKey="wealth" stroke="#0ea5e9" strokeWidth={3} fill="url(#colorWealth)" animationDuration={1500} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -815,7 +855,7 @@ export default function App() {
                               </div>
                               
                               <div>
-                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (自動過濾除息資格)</div>
+                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (動態過濾買進日)</div>
                                   <div className="space-y-2">
                                     {r.details?.map((d: any, i: number) => (
                                       <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-colors gap-3">
