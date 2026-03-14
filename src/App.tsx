@@ -8,7 +8,7 @@ import {
   TrendingUp, RefreshCw, PieChart as PieIcon, ShieldCheck, List, Trash2,
   X, ShoppingCart, ArrowUp, ArrowDown, Wifi, WifiOff, ChevronDown,
   ChevronUp, Calendar, CalendarDays, CheckCircle2, AlertTriangle, Plus,
-  Trophy, Crown, Zap, Target, Swords, Coins, MessageSquareText
+  Trophy, Crown, Zap, Target, Swords, Coins, Wallet, MessageSquareText
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
@@ -58,7 +58,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 84;
+const APP_SCHEMA_VERSION = 85;
 const LOCAL_KEY = 'baozutang_local';
 
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
@@ -508,7 +508,7 @@ export default function App() {
     <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V84</h1>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V85</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1 shadow-inner">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
@@ -740,11 +740,7 @@ export default function App() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis dataKey="year" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} dy={10} />
                   <YAxis stroke="#64748b" width={60} tickFormatter={(value) => `${Math.floor(value / 10000)}W`} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} dx={-10} />
-                  <Tooltip 
-                      formatter={(v: any) => [formatMoney(v), '預估資產']} 
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }}
-                      itemStyle={{ color: '#38bdf8', fontWeight: 'bold' }}
-                  />
+                  <Tooltip formatter={(v: any) => [formatMoney(v), '預估資產']} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }} itemStyle={{ color: '#38bdf8', fontWeight: 'bold' }} />
                   <Area type="monotone" dataKey="wealth" stroke="#0ea5e9" strokeWidth={3} fill="url(#colorWealth)" animationDuration={1500} />
                 </AreaChart>
               </ResponsiveContainer>
