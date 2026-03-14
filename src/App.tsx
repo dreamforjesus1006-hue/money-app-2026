@@ -8,7 +8,7 @@ import {
   TrendingUp, RefreshCw, PieChart as PieIcon, ShieldCheck, List, Trash2,
   X, ShoppingCart, ArrowUp, ArrowDown, Wifi, WifiOff, ChevronDown,
   ChevronUp, Calendar, CalendarDays, CheckCircle2, AlertTriangle, Plus,
-  Trophy, Crown, Zap, Target, Swords, Coins
+  Trophy, Crown, Zap, Target, Swords, Coins, MessageSquareText
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
@@ -58,7 +58,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 83;
+const APP_SCHEMA_VERSION = 84;
 const LOCAL_KEY = 'baozutang_local';
 
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
@@ -359,13 +359,14 @@ export default function App() {
   const combatPower = Math.floor(totalValue / 10000 + totalDividend / 12 / 100);
   const fireRatio = totalOut > 0 ? (totalDividend / totalOut) * 100 : 0;
 
-  const { currentRank, nextRank, progress, healthGrade, earnedAchievements } = useMemo(() => {
-    let cRank = '理財新手 🌱'; let nRank = '築基騎士 ⚔️'; let prog = 0;
-    if (fireRatio >= 100) { cRank = '財富神祇 🌟'; nRank = 'MAX'; prog = 100; }
-    else if (fireRatio >= 60) { cRank = '財富國王 👑'; nRank = '財富神祇 🌟'; prog = ((fireRatio - 60) / 40) * 100; }
-    else if (fireRatio >= 30) { cRank = '資產領主 🏰'; nRank = '財富國王 👑'; prog = ((fireRatio - 30) / 30) * 100; }
-    else if (fireRatio >= 10) { cRank = '築基騎士 ⚔️'; nRank = '資產領主 🏰'; prog = ((fireRatio - 10) / 20) * 100; }
-    else { prog = (fireRatio / 10) * 100; }
+  // V84 遊戲化增強：包含立繪(Avatar)與戰鬥日誌(Combat Log)
+  const { currentRank, nextRank, progress, healthGrade, earnedAchievements, avatar, combatLogs } = useMemo(() => {
+    let cRank = '理財新手 🌱'; let nRank = '築基騎士 ⚔️'; let prog = 0; let av = '🧑‍🌾';
+    if (fireRatio >= 100) { cRank = '財富神祇 🌟'; nRank = 'MAX'; prog = 100; av = '👑'; }
+    else if (fireRatio >= 60) { cRank = '財富國王 👑'; nRank = '財富神祇 🌟'; prog = ((fireRatio - 60) / 40) * 100; av = '🤴'; }
+    else if (fireRatio >= 30) { cRank = '資產領主 🏰'; nRank = '財富國王 👑'; prog = ((fireRatio - 30) / 30) * 100; av = '🧙‍♂️'; }
+    else if (fireRatio >= 10) { cRank = '築基騎士 ⚔️'; nRank = '資產領主 🏰'; prog = ((fireRatio - 10) / 20) * 100; av = '🤺'; }
+    else { prog = (fireRatio / 10) * 100; av = '🧑‍🌾'; }
 
     let grade = 'C';
     if (fireRatio >= 80 && currentMaintenance >= 160 && totalNet > 0) grade = 'SSS';
@@ -373,15 +374,25 @@ export default function App() {
     else if (fireRatio >= 30 && currentMaintenance >= 130) grade = 'A';
     else if (fireRatio >= 10) grade = 'B';
 
+    // V84: 加入稀有度樣式 (UR/SSR/SR/R)
     const ach = [];
-    if (totalValue >= 10000000) ach.push({ icon: '💰', title: '千萬俱樂部', desc: '總資產突破一千萬' });
-    if (totalValue >= 20000000) ach.push({ icon: '💎', title: '兩千萬霸主', desc: '總資產突破兩千萬' });
-    if (totalDividend / 12 >= 100000) ach.push({ icon: '🔥', title: '月入十萬', desc: '平均月被動收入達十萬' });
-    if (currentMaintenance >= 200 || currentMaintenance === 999) ach.push({ icon: '🛡️', title: '無敵鐵壁', desc: '維持率極度安全' });
-    if (totalOut > 0 && totalNet > 0) ach.push({ icon: '📈', title: '正向循環', desc: '淨現金流為正數' });
+    if (totalValue >= 20000000) ach.push({ icon: '💎', title: '兩千萬霸主', desc: '總資產突破兩千萬', rarity: 'UR', glow: 'shadow-[0_0_15px_rgba(236,72,153,0.6)] border-pink-500 text-pink-400 bg-pink-900/20' });
+    else if (totalValue >= 10000000) ach.push({ icon: '💰', title: '千萬俱樂部', desc: '總資產突破一千萬', rarity: 'SSR', glow: 'shadow-[0_0_15px_rgba(234,179,8,0.6)] border-yellow-500 text-yellow-400 bg-yellow-900/20' });
+    
+    if (totalDividend / 12 >= 100000) ach.push({ icon: '🔥', title: '月入十萬', desc: '平均月被動收入達十萬', rarity: 'UR', glow: 'shadow-[0_0_15px_rgba(249,115,22,0.6)] border-orange-500 text-orange-400 bg-orange-900/20' });
+    if (currentMaintenance >= 200 || currentMaintenance === 999) ach.push({ icon: '🛡️', title: '無敵鐵壁', desc: '維持率極度安全', rarity: 'SR', glow: 'border-blue-500 text-blue-400 bg-blue-900/20' });
+    if (totalOut > 0 && totalNet > 0) ach.push({ icon: '📈', title: '正向循環', desc: '淨現金流為正數', rarity: 'R', glow: 'border-emerald-500 text-emerald-400 bg-emerald-900/20' });
 
-    return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach };
-  }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet]);
+    // 產生戰鬥日誌
+    const logs = [
+        `[系統] 玩家【包租唐】登入戰情室，當前總戰力 ${combatPower.toLocaleString()}。`,
+        totalNet > 0 ? `[被動技] 資產護盾發動！預計每月淨回血 ${formatMoney(totalNet/12)}。` : `[警告] 現金流失血中，請注意防禦！`,
+        `[裝備] 持有 ${etfs.length} 件神兵利器 (ETF) 持續產出金幣。`,
+        currentMaintenance < 140 ? `[Debuff] 維持率過低，防禦力下降，面臨斷頭風險！` : `[Buff] 維持率穩健，防禦力堅不可摧。`
+    ];
+
+    return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach, avatar: av, combatLogs: logs };
+  }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length]);
 
   const snowballData = useMemo(() => {
     const avgYield = totalValue > 0 ? totalDividend / totalValue : 0.05;
@@ -494,238 +505,358 @@ export default function App() {
   if (isInitializing) return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white"><Loader2 className="animate-spin mr-2" /> 系統載入中...</div>;
 
   return (
-    <div className="min-h-screen p-4 md:p-8 bg-slate-900 text-white font-sans selection:bg-emerald-500/30">
-      <header className="mb-8 border-b border-slate-700 pb-4 flex justify-between items-center">
+    <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
+      <header className="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-emerald-400 flex items-center gap-2"><Calculator /> 包租唐戰情室 V83</h1>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V84</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
-            <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1">
+            <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1 shadow-inner">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
               {dataSrc === 'cloud' ? '雲端連線' : '本機模式'}
             </span>
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded border border-slate-700 text-emerald-400 hover:bg-emerald-900/30 transition-all" title="更新行情"><RefreshCw size={18} className={isUpdatingPrices ? "animate-spin" : ""} /></button>
-          <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded border border-slate-700 hover:bg-slate-700 transition-all" title="設定"><Settings size={18} /></button>
-          <button onClick={handleReset} className="p-2 bg-slate-800 rounded border border-slate-700 text-red-400 hover:bg-red-900/30 transition-all" title="重置"><RotateCcw size={18} /></button>
-          <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => { try { const raw = JSON.parse(ev.target?.result as string); const d = sanitizePayload(raw); setEtfs(d.etfs); setLoans(d.loans || []); setStockLoan(d.stockLoan || DEFAULT_STOCK_LOAN); setGlobalMarginLoan(d.globalMarginLoan || DEFAULT_GLOBAL_MARGIN); setCreditLoan(d.creditLoan || DEFAULT_CREDIT); setTaxStatus(d.taxStatus || DEFAULT_TAX); setAllocation(d.allocation || DEFAULT_ALLOC); setCloudConfig(d.cloudConfig || DEFAULT_CLOUD); setActualDetails(d.actualDetails || {}); setMonthlyRecords(d.monthlyRecords || {}); alert('匯入成功'); } catch (err) { alert('格式錯誤'); } }; r.readAsText(f); }} className="hidden" accept=".json" />
-          <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-slate-800 rounded border border-slate-700 text-blue-400" title="匯入檔案"><Upload size={18} /></button>
-          <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, actualDetails, monthlyRecords })} className="p-2 bg-slate-800 rounded border border-slate-700 text-amber-400" title="匯出備份"><Download size={18} /></button>
+          <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-emerald-400 hover:bg-emerald-900/50 hover:scale-105 transition-all shadow-md" title="更新行情"><RefreshCw size={18} className={isUpdatingPrices ? "animate-spin" : ""} /></button>
+          <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded-lg border border-slate-700 hover:bg-slate-700 hover:scale-105 transition-all shadow-md" title="設定"><Settings size={18} /></button>
+          <button onClick={handleReset} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-red-400 hover:bg-red-900/50 hover:scale-105 transition-all shadow-md" title="重置"><RotateCcw size={18} /></button>
+          <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => { try { const raw = JSON.parse(ev.target?.result as string); const d = sanitizePayload(raw); setEtfs(d.etfs); setLoans(d.loans || []); setStockLoan(d.stockLoan || DEFAULT_STOCK_LOAN); setGlobalMarginLoan(d.globalMarginLoan || DEFAULT_GLOBAL_MARGIN); setCreditLoan(d.creditLoan || DEFAULT_CREDIT); setTaxStatus(d.taxStatus || DEFAULT_TAX); setAllocation(d.allocation || DEFAULT_ALLOC); setCloudConfig(d.cloudConfig || DEFAULT_CLOUD); setActualDetails(d.actualDetails || {}); setMonthlyRecords(d.monthlyRecords || {}); alert('匯入成功！戰情室資料已更新。'); } catch (err) { alert('檔案格式錯誤'); } }; r.readAsText(f); }} className="hidden" accept=".json" />
+          <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-blue-400 hover:bg-blue-900/50 hover:scale-105 transition-all shadow-md" title="匯入存檔"><Upload size={18} /></button>
+          <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, actualDetails, monthlyRecords })} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-amber-400 hover:bg-amber-900/50 hover:scale-105 transition-all shadow-md" title="匯出備份"><Download size={18} /></button>
         </div>
       </header>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         <div className="xl:col-span-4 space-y-6">
-          <div className="bg-slate-800 p-6 rounded-2xl border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.15)] relative overflow-hidden">
-            <div className="absolute -top-4 -right-4 p-4 opacity-5 pointer-events-none"><Crown size={150} /></div>
-            
-            <div className="flex justify-between items-start mb-4">
-                <div><div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1">主線任務：FIRE <Target size={10}/></div><div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">{currentRank}</div></div>
-                <div className="text-right"><div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">財商評級</div><div className={`text-4xl font-black ${healthGrade.includes('S') ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]' : 'text-blue-400'}`}>{healthGrade}</div></div>
-            </div>
+          
+          {/* V84: RPG 角色面板進化 */}
+          <div className="bg-slate-900 p-1 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
+            <div className="bg-slate-900 p-5 rounded-xl h-full w-full">
+              <div className="flex items-center gap-4 mb-4">
+                  {/* 動態立繪 */}
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-slate-700 to-slate-800 flex items-center justify-center text-4xl shadow-inner border-2 border-slate-700 relative">
+                      {avatar}
+                      <div className="absolute -bottom-2 bg-slate-800 text-[8px] px-2 py-0.5 rounded-full border border-slate-600 font-bold uppercase tracking-wider text-slate-300">LV.{Math.floor(fireRatio/10)}</div>
+                  </div>
+                  <div className="flex-1">
+                      <div className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1 flex items-center gap-1">主線任務：FIRE <Target size={10}/></div>
+                      <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">{currentRank}</div>
+                  </div>
+                  <div className="text-right">
+                      <div className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1">評級</div>
+                      <div className={`text-4xl font-black italic ${healthGrade.includes('S') ? 'text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]' : 'text-blue-400'}`}>{healthGrade}</div>
+                  </div>
+              </div>
 
-            <div className="mb-6">
-                <div className="flex justify-between text-[10px] text-slate-400 mb-1"><span>經驗 (往 {nextRank})</span><span>{progress.toFixed(1)}%</span></div>
-                <div className="w-full bg-slate-900 h-3 rounded-full overflow-hidden border border-slate-700 shadow-inner"><div className="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full relative" style={{ width: `${progress}%` }}></div></div>
-            </div>
+              <div className="mb-6 relative">
+                  <div className="flex justify-between text-[10px] text-slate-400 mb-1 font-bold"><span>EXP</span><span>{progress.toFixed(1)}%</span></div>
+                  <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800 shadow-inner">
+                      <div className="bg-gradient-to-r from-emerald-600 to-emerald-400 h-full relative" style={{ width: `${progress}%` }}>
+                          <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                      </div>
+                  </div>
+              </div>
 
-            <div className="grid grid-cols-4 gap-2 border-t border-slate-700 pt-4">
-              <div className="text-center bg-slate-900/50 p-2 rounded-lg"><div className="text-slate-500 text-[9px] mb-1">攻擊力(年息)</div><div className="font-mono font-bold text-emerald-400 text-sm">{formatMoney(totalDividend)}</div></div>
-              <div className="text-center bg-slate-900/50 p-2 rounded-lg"><div className="text-slate-500 text-[9px] mb-1">防禦力(維持)</div><div className={`font-bold text-sm ${currentMaintenance < 140 ? 'text-red-400' : 'text-blue-400'}`}>{currentMaintenance === 999 ? 'MAX' : currentMaintenance.toFixed(0) + '%'}</div></div>
-              <div className="text-center bg-slate-900/50 p-2 rounded-lg"><div className="text-slate-500 text-[9px] mb-1">回血(月淨流)</div><div className={`font-mono font-bold text-sm ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet / 12)}</div></div>
-              <div className="text-center bg-slate-900/50 p-2 rounded-lg"><div className="text-slate-500 text-[9px] mb-1">日產金率</div><div className="font-mono font-bold text-yellow-400 text-sm">{formatMoney(totalDividend / 365)}</div></div>
+              <div className="grid grid-cols-4 gap-2 border-t border-slate-800 pt-4">
+                <div className="text-center bg-slate-800/50 p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-default"><div className="text-slate-500 text-[9px] mb-1 font-bold">攻擊力(年息)</div><div className="font-mono font-bold text-emerald-400 text-sm">{formatMoney(totalDividend)}</div></div>
+                <div className="text-center bg-slate-800/50 p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-default"><div className="text-slate-500 text-[9px] mb-1 font-bold">防禦力(維持)</div><div className={`font-bold text-sm ${currentMaintenance < 140 ? 'text-red-500 animate-pulse' : 'text-blue-400'}`}>{currentMaintenance === 999 ? 'MAX' : currentMaintenance.toFixed(0) + '%'}</div></div>
+                <div className="text-center bg-slate-800/50 p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-default"><div className="text-slate-500 text-[9px] mb-1 font-bold">回血(月淨流)</div><div className={`font-mono font-bold text-sm ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-500 animate-pulse'}`}>{formatMoney(totalNet / 12)}</div></div>
+                <div className="text-center bg-slate-800/50 p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-default"><div className="text-slate-500 text-[9px] mb-1 font-bold">日產金率</div><div className="font-mono font-bold text-yellow-400 text-sm">{formatMoney(totalDividend / 365)}</div></div>
+              </div>
+
+              {/* V84 新增: 戰鬥日誌 */}
+              <div className="mt-4 bg-slate-950 rounded-lg p-3 border border-slate-800 text-[10px] font-mono overflow-hidden h-24 relative flex flex-col justify-end">
+                <div className="absolute top-2 left-2 text-slate-600 flex items-center gap-1"><MessageSquareText size={10}/> 戰鬥日誌</div>
+                <div className="space-y-1 opacity-80 text-slate-300">
+                    {combatLogs.map((log, i) => (
+                        <div key={i} className={`truncate ${log.includes('[警告]') || log.includes('[Debuff]') ? 'text-red-400' : log.includes('[被動技]') || log.includes('[Buff]') ? 'text-emerald-400' : ''}`}>{log}</div>
+                    ))}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
-            <h2 className="text-sm font-bold mb-3 text-yellow-400 flex items-center gap-2"><Trophy size={16}/> 成就徽章</h2>
-            <div className="grid grid-cols-2 gap-2">
+          {/* V84: 稀有度成就牆 */}
+          <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl relative">
+            <h2 className="text-sm font-bold mb-3 text-yellow-400 flex items-center gap-2"><Trophy size={16}/> 榮譽殿堂 (Trophy Room)</h2>
+            <div className="grid grid-cols-2 gap-3">
                 {earnedAchievements.map((ach, i) => (
-                    <div key={i} className="bg-slate-900/80 p-2 rounded-lg border border-yellow-700/30 flex items-center gap-2 group"><div className="text-2xl drop-shadow-md">{ach.icon}</div><div><div className="text-xs font-bold text-slate-200">{ach.title}</div><div className="text-[9px] text-slate-500 line-clamp-1">{ach.desc}</div></div></div>
+                    <div key={i} className={`p-2.5 rounded-xl border flex items-center gap-3 relative overflow-hidden group hover:scale-105 transition-transform cursor-pointer ${ach.glow}`}>
+                        <div className="absolute -right-4 -bottom-4 text-4xl opacity-20 transform -rotate-12 group-hover:rotate-0 transition-transform">{ach.icon}</div>
+                        <div className="text-3xl drop-shadow-md z-10">{ach.icon}</div>
+                        <div className="z-10">
+                            <div className="flex items-center gap-1"><span className="text-xs font-black tracking-wide">{ach.title}</span> <span className="text-[8px] bg-black/50 px-1 rounded">{ach.rarity}</span></div>
+                            <div className="text-[9px] opacity-70 line-clamp-1 mt-0.5">{ach.desc}</div>
+                        </div>
+                    </div>
                 ))}
+                {earnedAchievements.length === 0 && <div className="col-span-2 text-center text-xs text-slate-600 py-6 border border-dashed border-slate-800 rounded-xl">持續投資，解鎖稀有徽章！</div>}
             </div>
           </div>
 
-          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
-            <h2 className="text-lg font-bold mb-4 text-cyan-300 flex items-center gap-2"><ShieldCheck /> 資產體質</h2>
-            <div className="h-64 -ml-4"><ResponsiveContainer width="100%" height="100%"><RadarChart data={radarData}><PolarGrid stroke="#334155" /><PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 12 }} /><Radar dataKey="A" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.5} /></RadarChart></ResponsiveContainer></div>
+          <section className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
+            <h2 className="text-sm font-bold mb-4 text-cyan-400 flex items-center gap-2"><ShieldCheck size={16}/> 角色屬性雷達</h2>
+            <div className="h-48 -ml-4"><ResponsiveContainer width="100%" height="100%"><RadarChart data={radarData}><PolarGrid stroke="#1e293b" /><PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10 }} /><Radar dataKey="A" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.4} /></RadarChart></ResponsiveContainer></div>
           </section>
 
-          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
-            <h2 className="text-lg font-bold mb-4 text-blue-300 flex items-center gap-2"><PieIcon /> 資金分配 (淨值)</h2>
-            <div className="h-48 flex justify-center items-center mb-4"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={5} dataKey="value">{pieData.map((entry, index) => (<Cell key={index} fill={(entry as any).color} />))}</Pie><Tooltip /></PieChart></ResponsiveContainer></div>
-            <div className="space-y-4">
-              <div><div className="flex justify-between text-xs mb-1"><span>配息型 ({allocation.dividendRatio}%)</span><span>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.dividendRatio) / 100 - actualDiv))}</span></div><div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden"><div className="bg-emerald-500 h-full" style={{ width: `${Math.min(100, (actualDiv / ((allocation.totalFunds * allocation.dividendRatio) / 100 || 1)) * 100)}%` }} /></div></div>
-              <div><div className="flex justify-between text-xs mb-1"><span>避險型 ({allocation.hedgingRatio}%)</span><span>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.hedgingRatio) / 100 - actualHedge))}</span></div><div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden"><div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, (actualHedge / ((allocation.totalFunds * allocation.hedgingRatio) / 100 || 1)) * 100)}%` }} /></div></div>
-              <div><div className="flex justify-between text-xs mb-1"><span>主動型 ({allocation.activeRatio}%)</span><span>缺 {formatMoney(Math.max(0, (allocation.totalFunds * allocation.activeRatio) / 100 - actualAct))}</span></div><div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden"><div className="bg-purple-500 h-full" style={{ width: `${Math.min(100, (actualAct / ((allocation.totalFunds * allocation.activeRatio) / 100 || 1)) * 100)}%` }} /></div></div>
-            </div>
-          </section>
-
-          <section className="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
-            <h2 className="text-lg font-bold mb-4 text-emerald-300 flex items-center gap-2"><Activity /> 標的清單</h2>
+          <section className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl">
+            <h2 className="text-lg font-bold mb-4 text-emerald-400 flex items-center gap-2"><Activity /> 裝備庫 (標的清單)</h2>
             <div className="space-y-4">
               {etfs.map((e, idx) => {
                 const yearEvents = e.schedule?.filter(ev => ev.year === selectedYear) || [];
                 return (
-                <div key={e.id} className="p-4 bg-slate-900 rounded-xl border border-slate-700 shadow-sm relative group">
+                <div key={e.id} className="p-4 bg-slate-950 rounded-xl border border-slate-800 shadow-sm relative group hover:border-slate-600 transition-colors">
                   <div className="flex flex-col gap-3 mb-4">
                     <div className="flex justify-between items-start">
                         <div className="flex flex-col gap-1 w-2/3">
-                            <input type="text" value={e.code || ''} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, code: v.target.value } : x)))} className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded w-16 outline-none" placeholder="代號"/>
+                            <input type="text" value={e.code || ''} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, code: v.target.value } : x)))} className="text-[10px] text-slate-500 bg-slate-900 px-2 py-0.5 rounded w-16 outline-none focus:ring-1 focus:ring-emerald-500/50" placeholder="代號"/>
                             <input type="text" value={e.name} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, name: v.target.value } : x)))} className="bg-transparent font-bold text-white text-lg outline-none w-full border-b border-transparent focus:border-slate-700"/>
                         </div>
                         <div className="flex gap-1 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => moveEtf(idx, -1)} className="p-1.5 bg-slate-800 rounded text-slate-400"><ArrowUp size={14} /></button>
-                            <button onClick={() => moveEtf(idx, 1)} className="p-1.5 bg-slate-800 rounded text-slate-400"><ArrowDown size={14} /></button>
-                            <button onClick={() => removeEtf(e.id)} className="p-1.5 bg-slate-800 rounded text-red-400"><Trash2 size={14} /></button>
+                            <button onClick={() => moveEtf(idx, -1)} className="p-1.5 bg-slate-900 hover:bg-slate-800 rounded text-slate-500 hover:text-slate-300"><ArrowUp size={14} /></button>
+                            <button onClick={() => moveEtf(idx, 1)} className="p-1.5 bg-slate-900 hover:bg-slate-800 rounded text-slate-500 hover:text-slate-300"><ArrowDown size={14} /></button>
+                            <button onClick={() => removeEtf(e.id)} className="p-1.5 bg-slate-900 hover:bg-red-900/30 rounded text-red-500/50 hover:text-red-400"><Trash2 size={14} /></button>
                         </div>
                     </div>
-                    <div className="flex justify-between items-center border-t border-slate-800 pt-2">
-                        <select value={e.category || 'dividend'} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, category: v.target.value as any } : x)))} className="bg-slate-800 text-xs text-blue-300 rounded px-2 py-1 outline-none">
+                    <div className="flex justify-between items-center border-t border-slate-800/50 pt-2 mt-1">
+                        <select value={e.category || 'dividend'} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, category: v.target.value as any } : x)))} className="bg-slate-900 text-xs text-blue-400 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-500/50 cursor-pointer">
                           <option value="dividend">配息型</option><option value="hedging">避險型</option><option value="active">主動型</option>
                         </select>
                         <div className="flex gap-1">
-                            <button onClick={() => setShowCalendar(showCalendar === e.id ? null : e.id)} className={`p-1.5 rounded-lg ${showCalendar === e.id ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}><CalendarDays size={16} /></button>
-                            <button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className={`p-1.5 rounded-lg ${activeBuyId === e.id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}><ShoppingCart size={16} /></button>
-                            <button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className={`p-1.5 rounded-lg ${expandedEtfId === e.id ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}`}><List size={16} /></button>
+                            <button onClick={() => setShowCalendar(showCalendar === e.id ? null : e.id)} className={`p-1.5 rounded-lg transition-colors ${showCalendar === e.id ? 'bg-emerald-600 text-white shadow-[0_0_10px_rgba(5,150,105,0.3)]' : 'bg-slate-900 text-slate-400 hover:text-white'}`}><CalendarDays size={16} /></button>
+                            <button onClick={() => setActiveBuyId(activeBuyId === e.id ? null : e.id)} className={`p-1.5 rounded-lg transition-colors ${activeBuyId === e.id ? 'bg-blue-600 text-white shadow-[0_0_10px_rgba(37,99,235,0.3)]' : 'bg-slate-900 text-slate-400 hover:text-white'}`}><ShoppingCart size={16} /></button>
+                            <button onClick={() => setExpandedEtfId(expandedEtfId === e.id ? null : e.id)} className={`p-1.5 rounded-lg transition-colors ${expandedEtfId === e.id ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(147,51,234,0.3)]' : 'bg-slate-900 text-slate-400 hover:text-white'}`}><List size={16} /></button>
                         </div>
                     </div>
                   </div>
                   
                   {showCalendar === e.id && (
-                    <div className="mb-4 p-3 bg-slate-800 border border-emerald-500/50 rounded-lg animate-in slide-in-from-top-2">
-                      <div className="text-xs font-bold text-emerald-400 mb-3 flex justify-between items-center border-b border-emerald-900/50 pb-2">
-                        <span>📅 {e.name} {selectedYear} 行事曆</span>
-                        <button onClick={() => setShowCalendar(null)} className="text-slate-500 hover:text-white bg-slate-900 p-1 rounded-full"><X size={14} /></button>
+                    <div className="mb-4 p-3 bg-slate-900 border border-emerald-500/30 rounded-xl animate-in slide-in-from-top-2 shadow-lg">
+                      <div className="text-xs font-bold text-emerald-500 mb-3 flex justify-between items-center border-b border-emerald-900/30 pb-2">
+                        <span>📅 {selectedYear} 年度配息行事曆</span>
+                        <button onClick={() => setShowCalendar(null)} className="text-slate-500 hover:text-white bg-slate-950 p-1 rounded-full"><X size={12} /></button>
                       </div>
                       <div className="space-y-2">
                         {yearEvents.length > 0 ? (
                           yearEvents.map((event) => (
-                            <div key={event.id} className="grid grid-cols-7 gap-2 text-[10px] items-center bg-slate-900/50 p-2 rounded">
+                            <div key={event.id} className="grid grid-cols-7 gap-2 text-[10px] items-center bg-slate-950 p-2 rounded-lg border border-slate-800/50">
                               <div className="col-span-2 text-slate-400 font-bold">{event.name}</div>
                               <div className="col-span-5 grid grid-cols-3 gap-2">
-                                <div><div className="text-slate-500 mb-0.5 text-[8px]">除息日</div><input type="date" value={event.exDate} onChange={(v) => updateSchedule(e.id, event.id, 'exDate', v.target.value)} className="w-full bg-slate-900 rounded p-1 text-slate-300" /></div>
-                                <div><div className="text-slate-500 mb-0.5 text-[8px]">發放日</div><input type="date" value={event.payDate} onChange={(v) => updateSchedule(e.id, event.id, 'payDate', v.target.value)} className="w-full bg-slate-900 rounded p-1 text-emerald-400" /></div>
-                                <div><div className="text-slate-500 mb-0.5 text-[8px]">金額</div><input type="number" step="0.01" value={event.amount} onChange={(v) => updateSchedule(e.id, event.id, 'amount', safeNum(v.target.value))} className="w-full bg-slate-900 rounded p-1 text-right text-yellow-400" /></div>
+                                <div><div className="text-slate-600 mb-0.5 text-[8px]">除息日</div><input type="date" value={event.exDate} onChange={(v) => updateSchedule(e.id, event.id, 'exDate', v.target.value)} className="w-full bg-slate-900 rounded p-1 text-slate-300 border border-transparent focus:border-emerald-500 outline-none transition-colors" /></div>
+                                <div><div className="text-slate-600 mb-0.5 text-[8px]">發放日</div><input type="date" value={event.payDate} onChange={(v) => updateSchedule(e.id, event.id, 'payDate', v.target.value)} className="w-full bg-slate-900 rounded p-1 text-emerald-400 border border-transparent focus:border-emerald-500 outline-none transition-colors" /></div>
+                                <div><div className="text-slate-600 mb-0.5 text-[8px]">金額</div><input type="number" step="0.01" value={event.amount} onChange={(v) => updateSchedule(e.id, event.id, 'amount', safeNum(v.target.value))} className="w-full bg-slate-900 rounded p-1 text-right text-yellow-400 font-bold border border-transparent focus:border-emerald-500 outline-none transition-colors" /></div>
                               </div>
                             </div>
                           ))
                         ) : (
-                          <button onClick={() => initYearSchedule(e.id)} className="px-5 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-lg w-full">➕ 建立行事曆</button>
+                          <div className="text-center py-4 bg-slate-950 rounded-lg border border-dashed border-slate-800">
+                             <div className="text-xs text-slate-500 mb-3">此裝備尚未設定 {selectedYear} 年配息資料</div>
+                             <button onClick={() => initYearSchedule(e.id)} className="px-5 py-2 bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg flex items-center justify-center gap-1 mx-auto"><Plus size={14}/> 初始化行事曆</button>
+                          </div>
                         )}
                       </div>
                     </div>
                   )}
 
                   {activeBuyId === e.id && (
-                    <div className="mb-4 p-3 bg-blue-900/20 rounded-lg">
-                      <div className="grid grid-cols-2 gap-2 mb-3">
-                        <input type="number" placeholder="股數" value={buyForm.shares} onChange={(v) => setBuyForm({ ...buyForm, shares: v.target.value })} className="bg-slate-900 p-1.5 rounded text-xs" />
-                        <input type="number" placeholder="單價" value={buyForm.price} onChange={(v) => setBuyForm({ ...buyForm, price: v.target.value })} className="bg-slate-900 p-1.5 rounded text-xs" />
-                        <input type="number" placeholder="融資額" value={buyForm.margin} onChange={(v) => setBuyForm({ ...buyForm, margin: v.target.value })} className="bg-slate-900 p-1.5 rounded text-xs" />
-                        <input type="date" value={buyForm.date} onChange={(v) => setBuyForm({ ...buyForm, date: v.target.value })} className="bg-slate-900 p-1.5 rounded text-xs" />
+                    <div className="mb-4 p-3 bg-blue-950/30 border border-blue-900/30 rounded-xl animate-in slide-in-from-top-2">
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div><label className="text-[9px] text-blue-400 ml-1">股數</label><input type="number" placeholder="1000" value={buyForm.shares} onChange={(v) => setBuyForm({ ...buyForm, shares: v.target.value })} className="w-full bg-slate-900 p-2 rounded-lg text-xs border border-transparent focus:border-blue-500 outline-none mt-0.5" /></div>
+                        <div><label className="text-[9px] text-blue-400 ml-1">單價</label><input type="number" placeholder="0.0" value={buyForm.price} onChange={(v) => setBuyForm({ ...buyForm, price: v.target.value })} className="w-full bg-slate-900 p-2 rounded-lg text-xs border border-transparent focus:border-blue-500 outline-none mt-0.5" /></div>
+                        <div><label className="text-[9px] text-blue-400 ml-1">融資額</label><input type="number" placeholder="0" value={buyForm.margin} onChange={(v) => setBuyForm({ ...buyForm, margin: v.target.value })} className="w-full bg-slate-900 p-2 rounded-lg text-xs border border-transparent focus:border-blue-500 outline-none mt-0.5" /></div>
+                        <div><label className="text-[9px] text-blue-400 ml-1">買進日</label><input type="date" value={buyForm.date} onChange={(v) => setBuyForm({ ...buyForm, date: v.target.value })} className="w-full bg-slate-900 p-2 rounded-lg text-xs border border-transparent focus:border-blue-500 outline-none mt-0.5 text-slate-300" /></div>
                       </div>
-                      <button onClick={() => { const s = safeNum(buyForm.shares); const p = safeNum(buyForm.price); const m = safeNum(buyForm.margin); if (!s || !p) return; setEtfs((prev) => { const n = [...prev]; n[idx] = recalculateEtfStats({ ...n[idx], lots: [...(n[idx].lots || []), { id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee: Math.floor(s * p * BROKERAGE_RATE), margin: m }] }); return n; }); setBuyForm({ shares: '', price: '', date: '', margin: '' }); setActiveBuyId(null); }} className="w-full bg-blue-600 py-2 rounded-lg font-bold">確認交易</button>
+                      <button onClick={() => { const s = safeNum(buyForm.shares); const p = safeNum(buyForm.price); const m = safeNum(buyForm.margin); if (!s || !p) return; setEtfs((prev) => { const n = [...prev]; n[idx] = recalculateEtfStats({ ...n[idx], lots: [...(n[idx].lots || []), { id: Date.now().toString(), date: buyForm.date, shares: s, price: p, fee: Math.floor(s * p * BROKERAGE_RATE), margin: m }] }); return n; }); setBuyForm({ shares: '', price: '', date: '', margin: '' }); setActiveBuyId(null); }} className="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded-lg font-bold text-sm transition-colors shadow-md">鍛造 (確認交易)</button>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-3 text-xs bg-slate-900/50 p-2 rounded-lg">
-                    <div><label className="text-slate-500 text-[10px]">總股數</label><div className="font-mono text-sm">{safeNum(e.shares).toLocaleString()}</div></div>
-                    <div><label className="text-slate-500 text-[10px]">現價</label><input type="number" value={safeNum(e.currentPrice)} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, currentPrice: safeNum(v.target.value) } : x)))} className="w-full bg-slate-800 rounded px-1" /></div>
-                    <div><label className="text-slate-500 text-[10px]">預估配息</label><div className="flex gap-1"><input type="number" value={safeNum(e.dividendPerShare)} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, dividendPerShare: safeNum(v.target.value) } : x)))} className="w-full bg-slate-800 rounded px-1" /></div></div>
+                  <div className="grid grid-cols-3 gap-3 text-xs bg-slate-900/50 p-3 rounded-xl border border-slate-800/50 mb-3">
+                    <div><label className="text-slate-500 text-[9px] uppercase tracking-wider">持有總數</label><div className="font-mono text-sm mt-1">{safeNum(e.shares).toLocaleString()}</div></div>
+                    <div><label className="text-slate-500 text-[9px] uppercase tracking-wider">即時現價</label><input type="number" value={safeNum(e.currentPrice)} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, currentPrice: safeNum(v.target.value) } : x)))} className="w-full bg-slate-900 rounded px-2 py-1 mt-1 border border-transparent focus:border-emerald-500 outline-none transition-colors" /></div>
+                    <div><label className="text-slate-500 text-[9px] uppercase tracking-wider">預估配息</label><div className="flex gap-1 mt-1"><input type="number" value={safeNum(e.dividendPerShare)} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, dividendPerShare: safeNum(v.target.value) } : x)))} className="w-full bg-slate-900 rounded px-1 py-1 border border-transparent focus:border-emerald-500 outline-none text-center transition-colors" /><select value={e.dividendType} onChange={(v) => setEtfs((prev) => prev.map((x, i) => (i === idx ? { ...x, dividendType: v.target.value as any } : x)))} className="bg-slate-900 text-[9px] text-blue-400 outline-none rounded px-1 border border-transparent focus:border-blue-500 cursor-pointer"><option value="per_period">次</option><option value="annual">年</option></select></div></div>
                   </div>
                   
                   {expandedEtfId === e.id && e.lots && (
-                    <div className="mt-4 space-y-2 border-t border-slate-800 pt-3">
+                    <div className="mt-4 space-y-2 border-t border-slate-800/50 pt-4">
                       {e.lots.map((l) => (
-                        <div key={l.id} className="flex justify-between items-center text-[10px] bg-slate-900 p-2 rounded border border-slate-700"><span className="text-slate-300">{l.date} | {l.shares.toLocaleString()} 股</span><span className="text-slate-400">${formatMoney(l.price)} (融:{formatMoney(l.margin || 0)}) <button onClick={() => setEtfs((prev) => { const n = [...prev]; n[idx] = recalculateEtfStats({ ...n[idx], lots: (n[idx].lots || []).filter((x) => x.id !== l.id) }); return n; })} className="text-red-500 ml-2">×</button></span></div>
+                        <div key={l.id} className="flex justify-between items-center text-[10px] bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 group/lot hover:border-slate-700 transition-colors">
+                            <span className="text-slate-400 font-mono">{l.date} <span className="mx-2 opacity-30">|</span> <span className="text-emerald-400/90">{l.shares.toLocaleString()} 股</span></span>
+                            <span className="text-slate-300 font-mono">${formatMoney(l.price)} <span className="text-[8px] text-slate-500 ml-1">(融:{formatMoney(l.margin || 0)})</span> <button onClick={() => setEtfs((prev) => { const n = [...prev]; n[idx] = recalculateEtfStats({ ...n[idx], lots: (n[idx].lots || []).filter((x) => x.id !== l.id) }); return n; })} className="text-red-500/50 hover:text-red-400 ml-2 p-1 rounded hover:bg-red-900/20 transition-colors"><X size={12}/></button></span>
+                        </div>
                       ))}
+                      {e.lots.length === 0 && <div className="text-center text-slate-600 text-[10px] py-2">尚未持有任何數量</div>}
                     </div>
                   )}
                 </div>
               )})}
-              <button onClick={() => setEtfs((prev) => [...prev, { id: Date.now().toString(), name: '新標的', code: '', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [1, 4, 7, 10], category: 'dividend', marginLoanAmount: 0, schedule: [], lots: [] }])} className="w-full py-3 border border-dashed border-slate-600 rounded-xl text-slate-400 hover:text-white">+ 新增標的</button>
+              <button onClick={() => setEtfs((prev) => [...prev, { id: Date.now().toString(), name: '新標的', code: '', shares: 0, costPrice: 0, currentPrice: 0, dividendPerShare: 0, dividendType: 'annual', payMonths: [1, 4, 7, 10], category: 'dividend', marginLoanAmount: 0, schedule: [], lots: [] }])} className="w-full py-4 border-2 border-dashed border-slate-800 rounded-xl text-slate-500 hover:text-emerald-400 hover:border-emerald-900/50 hover:bg-emerald-950/10 transition-all font-bold text-sm tracking-widest flex items-center justify-center gap-2"><Plus size={16}/> 購買新裝備</button>
             </div>
           </section>
         </div>
 
         <div className="xl:col-span-8 space-y-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg">
-              <div className="text-slate-400 text-xs uppercase">年度淨流</div>
-              <div className={`text-2xl font-bold ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(totalNet)}</div>
+            <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 text-emerald-500/10 group-hover:scale-110 transition-transform duration-500"><Wallet size={80}/></div>
+              <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-1">年度淨流</div>
+              <div className={`text-2xl font-black font-mono relative z-10 ${totalNet >= 0 ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]' : 'text-red-400'}`}>{formatMoney(totalNet)}</div>
             </div>
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg">
-              <div className="text-slate-400 text-xs uppercase">總資產</div>
-              <div className="text-2xl font-bold font-mono">{formatMoney(totalValue)}</div>
+            <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 text-blue-500/10 group-hover:scale-110 transition-transform duration-500"><Crown size={80}/></div>
+              <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-1">總資產</div>
+              <div className="text-2xl font-black font-mono text-slate-100 relative z-10">{formatMoney(totalValue)}</div>
             </div>
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg">
-              <div className="text-slate-400 text-xs uppercase">總負債</div>
-              <div className="text-2xl font-bold font-mono">{formatMoney(totalStockDebt)}</div>
+            <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 text-red-500/10 group-hover:scale-110 transition-transform duration-500"><AlertTriangle size={80}/></div>
+              <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-1">總負債</div>
+              <div className="text-2xl font-black font-mono text-slate-100 relative z-10">{formatMoney(totalStockDebt)}</div>
             </div>
-            <div className="bg-slate-800 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg">
-              <div className="text-slate-400 text-xs uppercase">股息Cover%</div>
-              <div className="text-2xl font-bold font-mono text-orange-400">{totalOut > 0 ? ((totalDividend / totalOut) * 100).toFixed(1) : 0}%</div>
+            <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg relative overflow-hidden group">
+              <div className="absolute -right-4 -bottom-4 text-orange-500/10 group-hover:scale-110 transition-transform duration-500"><ShieldCheck size={80}/></div>
+              <div className="text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-1">股息 Cover率</div>
+              <div className="text-2xl font-black font-mono text-orange-400 drop-shadow-[0_0_8px_rgba(251,146,60,0.3)] relative z-10">{totalOut > 0 ? ((totalDividend / totalOut) * 100).toFixed(1) : 0}%</div>
             </div>
           </div>
 
-          <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl overflow-x-auto">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold flex items-center gap-2 text-white"><Calendar className="text-blue-400" /> 每月對帳明細</h3>
-                <div className="flex items-center gap-2 bg-slate-900 rounded-lg p-1 border border-slate-600 shadow-inner">
-                    <button onClick={() => setSelectedYear(y => y - 1)} className="px-2 text-slate-400">◀</button>
-                    <span className="font-black text-emerald-400 w-12 text-center">{selectedYear}</span>
-                    <button onClick={() => setSelectedYear(y => y + 1)} className="px-2 text-slate-400">▶</button>
+          <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-xl">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-bold flex items-center gap-2 text-cyan-400"><TrendingUp size={20}/> 十年財富滾雪球 (含寬限期動態推算)</h3>
+                <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 border border-slate-800 shadow-inner">
+                    <button onClick={() => setSelectedYear(y => y - 1)} className="px-3 py-1 text-slate-500 hover:text-white hover:bg-slate-800 rounded-md transition-colors text-xs">◀</button>
+                    <span className="font-black text-emerald-400 w-16 text-center text-sm tracking-wider">{selectedYear}</span>
+                    <button onClick={() => setSelectedYear(y => y + 1)} className="px-3 py-1 text-slate-500 hover:text-white hover:bg-slate-800 rounded-md transition-colors text-xs">▶</button>
                 </div>
             </div>
-            <table className="w-full text-sm text-left">
-              <thead className="text-slate-500 bg-slate-900/50">
-                <tr><th className="p-3">月份</th><th className="p-3">其他收入</th><th className="p-3">預估股息</th><th className="p-3 bg-emerald-900/30 text-emerald-400">總實領</th><th className="p-3">差異</th><th className="p-3">房貸</th><th className="p-3">信貸</th><th className="p-3">利息</th><th className="p-3">生活</th><th className="p-3">稅金</th><th className="p-3 text-right">淨流</th></tr>
+            
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={snowballData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                      <linearGradient id="colorWealth" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.6} />
+                          <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                      </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis dataKey="year" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} dy={10} />
+                  <YAxis stroke="#64748b" width={60} tickFormatter={(value) => `${Math.floor(value / 10000)}W`} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} dx={-10} />
+                  <Tooltip 
+                      formatter={(v: any) => [formatMoney(v), '預估資產']} 
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', fontSize: '12px' }}
+                      itemStyle={{ color: '#38bdf8', fontWeight: 'bold' }}
+                  />
+                  <Area type="monotone" dataKey="wealth" stroke="#0ea5e9" strokeWidth={3} fill="url(#colorWealth)" animationDuration={1500} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+                <button onClick={() => setReinvest(false)} className={`px-4 py-1.5 text-[10px] font-bold rounded-lg transition-all ${!reinvest ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-700/50' : 'bg-slate-950 text-slate-500 border border-slate-800 hover:text-slate-300'}`}>純領息(花掉)</button>
+                <button onClick={() => setReinvest(true)} className={`px-4 py-1.5 text-[10px] font-bold rounded-lg transition-all ${reinvest ? 'bg-cyan-600 text-white shadow-[0_0_10px_rgba(8,145,178,0.4)]' : 'bg-slate-950 text-slate-500 border border-slate-800 hover:text-slate-300'}`}>股息再投入</button>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-xl overflow-x-auto">
+            <h3 className="text-lg font-bold mb-6 text-emerald-400 flex items-center gap-2"><Calendar size={20}/> {selectedYear} 戰術對帳面板</h3>
+            
+            <table className="w-full text-sm text-left border-collapse">
+              <thead className="text-slate-400 bg-slate-950/80 text-[10px] uppercase tracking-wider">
+                <tr>
+                    <th className="p-3 font-medium rounded-tl-lg">月份</th>
+                    <th className="p-3 font-medium">其他入帳</th>
+                    <th className="p-3 font-medium">預估配息</th>
+                    <th className="p-3 font-medium text-emerald-400 bg-emerald-950/30">銀行實領</th>
+                    <th className="p-3 font-medium">落差</th>
+                    <th className="p-3 font-medium">房貸出金</th>
+                    <th className="p-3 font-medium">信貸出金</th>
+                    <th className="p-3 font-medium">維持利息</th>
+                    <th className="p-3 font-medium">生活消耗</th>
+                    <th className="p-3 font-medium">稅金減損</th>
+                    <th className="p-3 font-medium text-right rounded-tr-lg">結算淨流</th>
+                </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-800/50">
                 {monthlyFlows.map((r) => (
                   <React.Fragment key={r.month}>
-                    <tr className="border-b border-slate-700/50 hover:bg-slate-700/30 font-mono text-xs cursor-pointer" onClick={() => setExpandedMonth(expandedMonth === r.month ? null : r.month)}>
-                      <td className="p-3 font-bold text-white">{r.month}月</td>
-                      <td className="p-3 text-blue-300 font-bold">{r.otherInc > 0 ? formatMoney(r.otherInc) : '-'}</td>
+                    <tr className="hover:bg-slate-800/30 font-mono text-[11px] cursor-pointer transition-colors group" onClick={() => setExpandedMonth(expandedMonth === r.month ? null : r.month)}>
+                      <td className="p-3 font-bold text-slate-300 flex items-center gap-1.5 w-16">
+                        {r.month}月 <span className="text-slate-600 group-hover:text-emerald-400 transition-colors">{expandedMonth === r.month ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</span>
+                      </td>
+                      <td className="p-3 text-blue-400 font-bold">{r.otherInc > 0 ? formatMoney(r.otherInc) : '-'}</td>
                       <td className="p-3 text-slate-500">{formatMoney(r.divProjected)}</td>
-                      <td className="p-3 text-emerald-400 font-bold">{r.divActualTotal > 0 ? formatMoney(r.divActualTotal) : '-'}</td>
-                      <td className="p-3 text-slate-500">{r.divActualTotal > 0 ? formatMoney(r.divActualTotal - r.divProjected * 0.9789) : '-'}</td>
-                      <td className="p-3 text-red-400">{formatMoney(r.loanOut)}</td>
-                      <td className="p-3 text-orange-400">{formatMoney(r.creditOut)}</td>
-                      <td className="p-3 text-blue-300">{formatMoney(r.stockInt)}</td>
-                      <td className="p-3 text-slate-500">{formatMoney(r.life)}</td>
-                      <td className="p-3 text-purple-400 text-[10px]">{formatMoney(r.healthTax)}<br/><span className="text-[8px] text-purple-500/80">+{formatMoney(r.incomeTax)}</span></td>
-                      <td className={`p-3 text-right font-bold ${r.net >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
+                      <td className="p-3 text-emerald-400 font-bold bg-emerald-950/20">{r.divActualTotal > 0 ? formatMoney(r.divActualTotal) : '-'}</td>
+                      <td className={`p-3 bg-emerald-950/20 ${r.divActualTotal > 0 && r.divActualTotal - r.divProjected * 0.9789 < 0 ? 'text-red-400' : 'text-slate-500'}`}>{r.divActualTotal > 0 ? formatMoney(r.divActualTotal - r.divProjected * 0.9789) : '-'}</td>
+                      <td className="p-3 text-red-400/80">{formatMoney(r.loanOut)}</td>
+                      <td className="p-3 text-orange-400/80">{formatMoney(r.creditOut)}</td>
+                      <td className="p-3 text-blue-300/80">{formatMoney(r.stockInt)}</td>
+                      <td className="p-3 text-slate-400">{formatMoney(r.life)}</td>
+                      <td className="p-3 text-purple-400/70 text-[9px]">{formatMoney(r.healthTax)}<br/><span className="opacity-40">+{formatMoney(r.incomeTax)}</span></td>
+                      <td className={`p-3 text-right font-bold text-sm ${r.net >= 0 ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(52,211,153,0.3)]' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
                     </tr>
+                    
                     {expandedMonth === r.month && (
-                      <tr className="bg-slate-900/80">
-                        <td colSpan={11} className="p-4 border-b border-emerald-900/30">
-                          <div className="mb-6 pt-2 border-b border-slate-700 pb-6 grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
-                            <div>
-                                <div className="text-xs text-slate-400 mb-2 font-bold">🏠 本月生活費</div>
-                                <input type="number" placeholder={`預設 ${formatMoney(taxStatus.livingExpenses)}`} value={monthlyRecords[`${selectedYear}_${r.month}`]?.livingExpense ?? ''} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'livingExpense', e.target.value === '' ? undefined : safeNum(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-white outline-none" onClick={e => e.stopPropagation()} />
-                            </div>
-                            <div>
-                                <div className="text-xs text-slate-400 mb-2 font-bold">💰 其他收入 (如: 兼職、租金)</div>
-                                <div className="flex gap-2">
-                                  <input type="number" placeholder="0" value={monthlyRecords[`${selectedYear}_${r.month}`]?.otherIncome ?? ''} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'otherIncome', e.target.value === '' ? undefined : safeNum(e.target.value))} className="flex-1 bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-blue-300 outline-none" onClick={e => e.stopPropagation()} />
-                                  <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer" onClick={e => e.stopPropagation()}><input type="checkbox" checked={monthlyRecords[`${selectedYear}_${r.month}`]?.isTaxable ?? false} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'isTaxable', e.target.checked)} className="accent-blue-500 w-4 h-4"/> 算入所得稅</label>
-                                </div>
-                            </div>
-                          </div>
-                          <div className="space-y-3 max-w-4xl">
-                            <div className="text-sm text-emerald-400 font-bold border-b border-slate-700 pb-2"> 各檔 ETF 實領輸入</div>
-                            {r.details?.map((d: any, i: number) => (
-                              <div key={i} className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg border border-slate-700 gap-3">
-                                <div><div className="text-white text-sm font-bold">{d.name}</div><div className="text-[10px] text-slate-500">預估: {formatMoney(d.amt)}</div></div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs text-emerald-500">實領:</span>
-                                  <input type="number" placeholder={Math.floor(d.amt * 0.9789).toString()} value={d.actual || ''} onChange={(e) => updateDetailActual(selectedYear, r.month, d.id, safeNum(e.target.value))} className="w-28 bg-slate-800 border border-emerald-600/50 rounded px-2 py-1 text-emerald-400 font-bold text-right outline-none" onClick={(e) => e.stopPropagation()} />
-                                </div>
+                      <tr className="bg-slate-950/50">
+                        <td colSpan={11} className="p-0">
+                          <div className="p-5 border-l-2 border-emerald-500/50 bg-gradient-to-r from-slate-900 to-transparent m-2 rounded-r-xl animate-in slide-in-from-top-1">
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 pb-6 border-b border-slate-800">
+                                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                                      <div className="text-[11px] text-slate-400 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-500"></div> 本月生活費設定</div>
+                                      <div className="flex items-center gap-3">
+                                          <input type="number" placeholder={`預設值: ${formatMoney(taxStatus.livingExpenses)}`} value={monthlyRecords[`${selectedYear}_${r.month}`]?.livingExpense ?? ''} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'livingExpense', e.target.value === '' ? undefined : safeNum(e.target.value))} className="w-full bg-slate-950 border border-slate-700 focus:border-slate-500 rounded-lg px-3 py-2 text-sm text-white outline-none transition-colors" onClick={e => e.stopPropagation()} />
+                                      </div>
+                                      <div className="text-[9px] text-slate-600 mt-2">留白將自動套用全域預設值</div>
+                                  </div>
+                                  <div className="bg-blue-950/10 rounded-xl p-4 border border-blue-900/30">
+                                      <div className="text-[11px] text-blue-400 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div> 額外戰利品 (其他收入)</div>
+                                      <div className="flex gap-2 items-center">
+                                          <input type="number" placeholder="輸入額外金額..." value={monthlyRecords[`${selectedYear}_${r.month}`]?.otherIncome ?? ''} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'otherIncome', e.target.value === '' ? undefined : safeNum(e.target.value))} className="flex-1 bg-slate-950 border border-blue-900/50 focus:border-blue-500 rounded-lg px-3 py-2 text-sm text-blue-300 font-bold outline-none transition-colors" onClick={e => e.stopPropagation()} />
+                                          <label className="flex items-center gap-2 text-[10px] text-slate-400 cursor-pointer bg-slate-950 px-3 py-2.5 rounded-lg border border-slate-800 hover:bg-slate-900 transition-colors" onClick={e => e.stopPropagation()}>
+                                              <input type="checkbox" checked={monthlyRecords[`${selectedYear}_${r.month}`]?.isTaxable ?? false} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'isTaxable', e.target.checked)} className="accent-blue-500 w-3.5 h-3.5 rounded-sm"/>
+                                              計入綜所稅
+                                          </label>
+                                      </div>
+                                  </div>
                               </div>
-                            ))}
+                              
+                              <div>
+                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (自動過濾除息資格)</div>
+                                  <div className="space-y-2">
+                                    {r.details?.map((d: any, i: number) => (
+                                      <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-colors gap-3">
+                                        <div className="flex-1">
+                                          <div className="text-slate-200 text-sm font-bold flex items-center gap-2">
+                                            {d.name} 
+                                            {d.exDate !== '未填' && d.exDate !== '預估' && <span className="text-[9px] font-mono text-emerald-400/70 bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-900/50">除息: {d.exDate}</span>}
+                                          </div>
+                                          <div className="text-[10px] text-slate-500 mt-1 flex gap-4">
+                                            <span>預估(稅前): <span className="font-mono text-slate-400">{formatMoney(d.amt)}</span></span>
+                                            <span className={d.qualifiedShares < d.totalShares ? 'text-orange-400 flex items-center gap-1' : 'text-slate-600'}>
+                                              {d.qualifiedShares < d.totalShares && <AlertTriangle size={10}/>}
+                                              資格股: {safeNum(d.qualifiedShares).toLocaleString()} / 總: {safeNum(d.totalShares).toLocaleString()}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-4 bg-slate-950 py-1.5 px-3 rounded-lg border border-slate-800 w-full sm:w-auto">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-emerald-600 font-bold uppercase">入帳</span>
+                                                <div className="relative">
+                                                    <span className="absolute left-2 top-[7px] text-emerald-700 text-[10px] font-bold">$</span>
+                                                    <input type="number" placeholder={Math.floor(d.amt * 0.9789).toString()} value={d.actual || ''} onChange={(e) => updateDetailActual(selectedYear, r.month, d.id, safeNum(e.target.value))} className="w-24 bg-transparent border-b border-emerald-900/50 focus:border-emerald-500 pl-5 pr-1 py-1 text-emerald-400 font-mono font-bold text-right outline-none transition-colors text-sm" onClick={(e) => e.stopPropagation()} />
+                                                </div>
+                                            </div>
+                                            <div className="w-px h-6 bg-slate-800"></div>
+                                            <div className="flex flex-col items-end w-16">
+                                                <span className="text-[8px] text-slate-600 mb-0.5 uppercase">差額</span>
+                                                <span className={`text-[11px] font-mono ${d.actual && (d.actual - Math.floor(d.amt * 0.9789)) < 0 ? "text-red-400" : "text-slate-400"}`}>
+                                                    {d.actual ? formatMoney(d.actual - Math.floor(d.amt * 0.9789)) : '-'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {(!r.details || r.details.length === 0) && <div className="text-slate-600 text-[10px] py-4 text-center bg-slate-950 rounded-lg border border-dashed border-slate-800">本月無配息戰役</div>}
+                                  </div>
+                              </div>
                           </div>
                         </td>
                       </tr>
@@ -733,73 +864,118 @@ export default function App() {
                   </React.Fragment>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="bg-slate-950 font-black text-slate-300 text-xs border-t-2 border-slate-800">
+                  <td className="p-4 rounded-bl-lg">年度總計</td>
+                  <td className="p-4 text-blue-400">{formatMoney(totalOtherIncome)}</td>
+                  <td className="p-4 text-slate-500">預:{formatMoney(monthlyFlows.reduce((a: number, b: any) => a + b.divProjected, 0))}</td>
+                  <td className="p-4 text-emerald-400 text-base">實:{formatMoney(totalDividend)}</td>
+                  <td />
+                  <td className="p-4 text-red-500" colSpan={5}>總消耗: {formatMoney(totalOut)}</td>
+                  <td className={`p-4 text-right font-mono text-lg rounded-br-lg ${totalNet >= 0 ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.4)]' : 'text-red-500'}`}>{formatMoney(totalNet)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
-
-          <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-white"><TrendingUp className="text-indigo-400" /> 十年財富滾雪球</h3>
-              <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-600">
-                <button onClick={() => setReinvest(false)} className={`px-3 py-1 text-xs rounded transition-all ${!reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>花掉股息</button>
-                <button onClick={() => setReinvest(true)} className={`px-3 py-1 text-xs rounded transition-all ${reinvest ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>複利投入</button>
-              </div>
-            </div>
-            <div className="h-64"><ResponsiveContainer width="100%" height="100%"><AreaChart data={snowballData}><CartesianGrid strokeDasharray="3 3" stroke="#334155" /><XAxis dataKey="year" stroke="#94a3b8" /><YAxis stroke="#94a3b8" width={80} tickFormatter={(value) => `$${Math.floor(value / 10000)}萬`} /><Tooltip formatter={(v: any) => formatMoney(v)} /><Area type="monotone" dataKey="wealth" stroke="#818cf8" fill="#818cf8" fillOpacity={0.3} /></AreaChart></ResponsiveContainer></div>
-          </div>
-
         </div>
       </div>
 
       {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 z-[100]">
-          <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 w-full max-w-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
-            <h3 className="text-xl font-bold mb-4 text-white flex items-center gap-2"><Settings /> 設定</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 z-[100] animate-in fade-in duration-200">
+          <div className="bg-slate-900 p-6 rounded-2xl border border-slate-700 w-full max-w-3xl shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-3">
+                <h3 className="text-xl font-black text-white flex items-center gap-2"><Settings className="text-emerald-400"/> 系統設定 (後台參數)</h3>
+                <button onClick={() => setShowSettings(false)} className="p-1.5 bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"><X size={18}/></button>
+            </div>
+            
             <div className="space-y-6 text-sm">
-              <div><label className="text-slate-400 block mb-1 font-bold text-emerald-400">Google Sheet 連結</label><input type="text" value={cloudConfig.priceSourceUrl} onChange={(e) => setCloudConfig({ ...cloudConfig, priceSourceUrl: e.target.value })} className="w-full bg-slate-900 p-2 rounded border border-slate-600" /></div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-yellow-400 font-bold mb-2">所得稅參數 (2025)</h4>
-                  <div className="space-y-2 p-3 bg-slate-900 rounded-xl">
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <label className="text-slate-400 block mb-2 font-bold text-xs uppercase tracking-wider flex items-center gap-2"><Wifi size={14} className="text-blue-400"/> Google Sheet CSV 行情連結</label>
+                <input type="text" value={cloudConfig.priceSourceUrl} onChange={(e) => setCloudConfig({ ...cloudConfig, priceSourceUrl: e.target.value })} className="w-full bg-slate-900 p-2.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500 text-xs text-slate-300" placeholder="https://docs.google.com/spreadsheets/..." />
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><label className="text-slate-500 text-[10px] uppercase font-bold mb-1 block">投資預算</label><input type="number" value={allocation.totalFunds} onChange={(e) => setAllocation({ ...allocation, totalFunds: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg text-slate-200 outline-none focus:border-emerald-500 border border-transparent transition-colors" /></div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><label className="text-slate-500 text-[10px] uppercase font-bold mb-1 block">配息%</label><input type="number" value={allocation.dividendRatio} onChange={(e) => setAllocation({ ...allocation, dividendRatio: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg text-slate-200 outline-none focus:border-emerald-500 border border-transparent transition-colors" /></div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><label className="text-slate-500 text-[10px] uppercase font-bold mb-1 block">避險%</label><input type="number" value={allocation.hedgingRatio} onChange={(e) => setAllocation({ ...allocation, hedgingRatio: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg text-slate-200 outline-none focus:border-emerald-500 border border-transparent transition-colors" /></div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800"><label className="text-slate-500 text-[10px] uppercase font-bold mb-1 block">主動%</label><input type="number" value={allocation.activeRatio} onChange={(e) => setAllocation({ ...allocation, activeRatio: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg text-slate-200 outline-none focus:border-emerald-500 border border-transparent transition-colors" /></div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-yellow-500"></div>
+                  <h4 className="text-yellow-500 font-bold mb-3 text-xs uppercase tracking-wider">稅務防禦力 (所得稅參數)</h4>
+                  <div className="space-y-3">
                     <div>
-                        <div className="flex justify-between mb-1"><label className="text-slate-400 text-xs">ETF 股息應稅比例 (54C)</label><span className="text-yellow-400 font-bold text-xs">{taxStatus.dividendTaxableRatio ?? 30}%</span></div>
-                        <input type="range" min="0" max="100" value={taxStatus.dividendTaxableRatio ?? 30} onChange={(e) => setTaxStatus({ ...taxStatus, dividendTaxableRatio: safeNum(e.target.value) })} className="w-full accent-yellow-400" />
+                        <div className="flex justify-between mb-1"><label className="text-slate-400 text-[10px] font-bold">ETF 股息應稅比例 (54C)</label><span className="text-yellow-400 font-mono text-xs">{taxStatus.dividendTaxableRatio ?? 30}%</span></div>
+                        <input type="range" min="0" max="100" value={taxStatus.dividendTaxableRatio ?? 30} onChange={(e) => setTaxStatus({ ...taxStatus, dividendTaxableRatio: safeNum(e.target.value) })} className="w-full accent-yellow-500" />
                     </div>
-                    <div><label className="text-slate-400 text-xs">年薪資 (僅計稅)</label><input type="number" value={taxStatus.salaryIncome} onChange={(e) => setTaxStatus({ ...taxStatus, salaryIncome: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1.5 rounded" /></div>
-                    <div className="flex gap-4"><label><input type="checkbox" checked={taxStatus.hasSpouse} onChange={(e) => setTaxStatus({ ...taxStatus, hasSpouse: e.target.checked })} /> 有配偶</label><label><input type="checkbox" checked={taxStatus.isDisabled} onChange={(e) => setTaxStatus({ ...taxStatus, isDisabled: e.target.checked })} /> 身心障礙</label></div>
-                    <div className="flex gap-4"><div><label className="text-slate-500">扶養</label><input type="number" value={taxStatus.dependents} onChange={(e) => setTaxStatus({ ...taxStatus, dependents: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1 rounded" /></div><div><label className="text-slate-500">身障數</label><input type="number" value={taxStatus.disabilityCount} onChange={(e) => setTaxStatus({ ...taxStatus, disabilityCount: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1 rounded" /></div></div>
+                    <div><label className="text-slate-400 text-[10px] font-bold mb-1 block">年薪資 (僅做為稅基計算，不入現金流)</label><input type="number" value={taxStatus.salaryIncome} onChange={(e) => setTaxStatus({ ...taxStatus, salaryIncome: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg outline-none border border-transparent focus:border-yellow-500" /></div>
+                    <div className="flex gap-4 bg-slate-900 p-2 rounded-lg">
+                        <label className="flex items-center gap-2 text-[10px] text-slate-300 cursor-pointer"><input type="checkbox" checked={taxStatus.hasSpouse} onChange={(e) => setTaxStatus({ ...taxStatus, hasSpouse: e.target.checked })} className="accent-yellow-500 w-3 h-3"/> 合併申報</label>
+                        <label className="flex items-center gap-2 text-[10px] text-slate-300 cursor-pointer"><input type="checkbox" checked={taxStatus.isDisabled} onChange={(e) => setTaxStatus({ ...taxStatus, isDisabled: e.target.checked })} className="accent-yellow-500 w-3 h-3"/> 身心障礙</label>
+                    </div>
+                    <div className="flex gap-3">
+                        <div className="flex-1"><label className="text-slate-500 text-[10px] font-bold block mb-1">扶養人數</label><input type="number" value={taxStatus.dependents} onChange={(e) => setTaxStatus({ ...taxStatus, dependents: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg outline-none border border-transparent focus:border-yellow-500" /></div>
+                        <div className="flex-1"><label className="text-slate-500 text-[10px] font-bold block mb-1">身障額度數</label><input type="number" value={taxStatus.disabilityCount} onChange={(e) => setTaxStatus({ ...taxStatus, disabilityCount: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg outline-none border border-transparent focus:border-yellow-500" /></div>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <h4 className="text-blue-400 font-bold mb-2">借貸與預設生活費</h4>
-                  <div className="space-y-2 p-3 bg-slate-900 rounded-xl">
-                    <div className="flex gap-2"><div><label className="text-slate-500">信貸本金</label><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({ ...creditLoan, principal: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1 rounded" /></div><div><label className="text-slate-500">利率%</label><input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({ ...creditLoan, rate: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1 rounded" /></div></div>
-                    <div className="flex gap-2"><div><label className="text-slate-500">借貸本金</label><input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({ ...stockLoan, principal: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1 rounded" /></div><div><label className="text-slate-500">利率%</label><input type="number" value={stockLoan.rate} onChange={(e) => setStockLoan({ ...stockLoan, rate: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1 rounded" /></div></div>
-                    <div><label className="text-slate-400">預設月生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={(e) => setTaxStatus({ ...taxStatus, livingExpenses: safeNum(e.target.value) })} className="w-full bg-slate-800 p-1.5 rounded" /></div>
+                
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                  <h4 className="text-blue-400 font-bold mb-3 text-xs uppercase tracking-wider">日常消耗 & 其他借貸</h4>
+                  <div className="space-y-3">
+                    <div><label className="text-slate-400 text-[10px] font-bold block mb-1">預設月生活費 (無輸入實支時套用)</label><input type="number" value={taxStatus.livingExpenses} onChange={(e) => setTaxStatus({ ...taxStatus, livingExpenses: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg outline-none border border-transparent focus:border-blue-500 text-emerald-400 font-mono" /></div>
+                    <div className="flex gap-3 bg-slate-900 p-2 rounded-lg">
+                        <div className="flex-1"><label className="text-slate-500 text-[10px] block mb-1">信貸餘額</label><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({ ...creditLoan, principal: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
+                        <div className="w-16"><label className="text-slate-500 text-[10px] block mb-1">利率%</label><input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({ ...creditLoan, rate: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
+                    </div>
+                    <div className="flex gap-3 bg-slate-900 p-2 rounded-lg">
+                        <div className="flex-1"><label className="text-slate-500 text-[10px] block mb-1">借貸本金 (維持率)</label><input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({ ...stockLoan, principal: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
+                        <div className="w-16"><label className="text-slate-500 text-[10px] block mb-1">利率%</label><input type="number" value={stockLoan.rate} onChange={(e) => setStockLoan({ ...stockLoan, rate: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="pt-4 border-t border-slate-700">
-                <h4 className="text-emerald-400 font-bold mb-2">房貸進階設定</h4>
-                {loans.map((l, i) => (
-                  <div key={l.id} className="mb-4 p-3 bg-slate-900 rounded-xl border border-slate-600">
-                    <div className="flex gap-2 mb-2"><input type="text" value={l.name} onChange={(e) => updateLoan(i, 'name', e.target.value)} className="w-1/2 bg-slate-800 p-1 rounded" /><input type="number" value={l.principal} onChange={(e) => updateLoan(i, 'principal', safeNum(e.target.value))} className="w-1/2 bg-slate-800 p-1 rounded" /></div>
-                    <div className="flex gap-2 mb-2">
-                        <div><label className="text-[10px]">利率1%</label><input type="number" value={l.rate1} onChange={(e) => updateLoan(i, 'rate1', safeNum(e.target.value))} className="w-full bg-slate-800 p-1 rounded" /></div>
-                        <div><label className="text-[10px]">月數1</label><input type="number" value={l.rate1Months} onChange={(e) => updateLoan(i, 'rate1Months', safeNum(e.target.value))} className="w-full bg-slate-800 p-1 rounded" /></div>
-                        <div><label className="text-[10px]">利率2%</label><input type="number" value={l.rate2} onChange={(e) => updateLoan(i, 'rate2', safeNum(e.target.value))} className="w-full bg-slate-800 p-1 rounded" /></div>
-                    </div>
-                    <div className="flex gap-2">
-                        <div><label className="text-[10px] text-emerald-400">撥款日</label><input type="date" value={l.startDate || ''} onChange={(e) => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-800 p-1 rounded border border-emerald-900" /></div>
-                        <div><label className="text-[10px]">寬限期</label><input type="number" value={l.gracePeriod} onChange={(e) => updateLoan(i, 'gracePeriod', safeNum(e.target.value))} className="w-full bg-slate-800 p-1 rounded" /></div>
-                        <div><label className="text-[10px]">已繳</label><input type="number" disabled value={l.paidMonths} className="w-full bg-slate-800/50 p-1 rounded" /></div>
-                    </div>
-                    <button onClick={() => setLoans((prev) => prev.filter((x) => x.id !== l.id))} className="text-[10px] text-red-500 mt-2">刪除貸款</button>
-                  </div>
-                ))}
-                <button onClick={() => setLoans((prev) => [...prev, { id: Date.now().toString(), name: '新房貸', principal: 0, rate1: 2.1, rate1Months: 36, rate2: 2.3, totalMonths: 360, paidMonths: 0, gracePeriod: 0, type: 'PrincipalAndInterest' }])} className="text-xs text-blue-400 border border-blue-400/30 px-3 py-1 rounded-lg">+ 新增房貸</button>
+              
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                <h4 className="text-red-400 font-bold mb-3 text-xs uppercase tracking-wider flex items-center justify-between">
+                    房貸戰線設定
+                    <button onClick={() => setLoans((prev) => [...prev, { id: Date.now().toString(), name: '新房貸', principal: 0, rate1: 2.1, rate1Months: 36, rate2: 2.3, totalMonths: 360, paidMonths: 0, gracePeriod: 0, type: 'PrincipalAndInterest' }])} className="text-[10px] bg-red-900/30 text-red-400 px-2 py-1 rounded hover:bg-red-900/50 transition-colors flex items-center gap-1"><Plus size={10}/> 新增房貸</button>
+                </h4>
+                
+                <div className="space-y-3">
+                    {loans.map((l, i) => (
+                      <div key={l.id} className="bg-slate-900 p-3 rounded-lg border border-slate-800">
+                        <div className="flex gap-3 mb-2">
+                            <div className="w-1/3"><label className="text-slate-500 text-[9px] block mb-0.5">名稱</label><input type="text" value={l.name} onChange={(e) => updateLoan(i, 'name', e.target.value)} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
+                            <div className="flex-1"><label className="text-slate-500 text-[9px] block mb-0.5">本金</label><input type="number" value={l.principal} onChange={(e) => updateLoan(i, 'principal', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent font-mono" /></div>
+                            <div className="w-8 flex items-end justify-end"><button onClick={() => setLoans((prev) => prev.filter((x) => x.id !== l.id))} className="p-1.5 text-slate-600 hover:text-red-500 bg-slate-950 rounded mb-0.5"><Trash2 size={12}/></button></div>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                            <div><label className="text-slate-600 text-[8px] block mb-0.5">1段利率%</label><input type="number" step="0.001" value={l.rate1} onChange={(e) => updateLoan(i, 'rate1', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
+                            <div><label className="text-slate-600 text-[8px] block mb-0.5">1段月數</label><input type="number" value={l.rate1Months} onChange={(e) => updateLoan(i, 'rate1Months', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
+                            <div><label className="text-slate-600 text-[8px] block mb-0.5">2段利率%</label><input type="number" step="0.001" value={l.rate2} onChange={(e) => updateLoan(i, 'rate2', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
+                            <div><label className="text-slate-600 text-[8px] block mb-0.5">總期數</label><input type="number" value={l.totalMonths} onChange={(e) => updateLoan(i, 'totalMonths', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <div><label className="text-emerald-500/70 text-[8px] font-bold block mb-0.5">撥款日 (動態起算基準)</label><input type="date" value={l.startDate || ''} onChange={(e) => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none border border-emerald-900/50 focus:border-emerald-500 text-slate-300" /></div>
+                            <div><label className="text-slate-600 text-[8px] block mb-0.5">寬限期(月)</label><input type="number" value={l.gracePeriod} onChange={(e) => updateLoan(i, 'gracePeriod', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
+                            <div><label className="text-slate-600 text-[8px] block mb-0.5">已繳 (留白由系統算)</label><input type="number" disabled value={l.paidMonths} className="w-full bg-slate-950/50 p-1.5 rounded text-xs text-slate-600 cursor-not-allowed font-mono" /></div>
+                        </div>
+                      </div>
+                    ))}
+                    {loans.length === 0 && <div className="text-center py-4 text-xs text-slate-600 border border-dashed border-slate-800 rounded-lg">目前無房貸負擔</div>}
+                </div>
               </div>
             </div>
-            <button onClick={() => setShowSettings(false)} className="w-full mt-6 py-3 bg-blue-600 rounded-xl font-bold shadow-lg">儲存關閉</button>
+            
+            <div className="mt-8 flex gap-3">
+                <button onClick={() => setShowSettings(false)} className="flex-1 py-3 bg-slate-800 text-slate-300 rounded-xl font-bold hover:bg-slate-700 transition-colors">取消 / 返回</button>
+                <button onClick={() => setShowSettings(false)} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black shadow-[0_0_15px_rgba(5,150,105,0.4)] hover:bg-emerald-500 transition-all transform hover:scale-[1.02]">儲存設定並同步</button>
+            </div>
           </div>
         </div>
       )}
