@@ -59,7 +59,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 88;
+const APP_SCHEMA_VERSION = 89;
 const LOCAL_KEY = 'baozutang_local';
 
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
@@ -315,6 +315,12 @@ const StorageService = {
   clearLocal: () => { try { localStorage.removeItem(LOCAL_KEY); } catch {} }
 };
 
+const parseCsvPriceMap = (text: string) => {
+  const map = new Map<string, number>();
+  text.trim().split(/\r?\n/).forEach((r) => { const cols = r.split(',').map((x) => x.trim()); if (cols.length >= 2 && cols[0] && cols[0].toLowerCase() !== 'code') { const price = parseFloat(cols[1]); if (Number.isFinite(price)) map.set(cols[0], price); } });
+  return map;
+};
+
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -430,7 +436,7 @@ export default function App() {
     return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach, avatar: av, combatLogs: logs };
   }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length, combatPower]);
 
-  // V87: 近期戰情報告 (未來除權息事件過濾)
+  // V87: 近期戰情報告
   const upcomingEvents = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -578,11 +584,16 @@ export default function App() {
     } catch (e) { alert('更新失敗，請檢查網址或網路狀態。'); } finally { setIsUpdatingPrices(false); }
   };
 
-  // V88: 證交所 OpenAPI 自動抓取
+  // V89: CORS Proxy 替身抓取系統
   const handleScanTWSE = async () => {
     setIsScanningTwse(true);
     try {
-      const res = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/TWT49U');
+      // 使用 CORS Proxy 繞過前端跨域限制
+      const proxyUrl = 'https://api.allorigins.win/raw?url=';
+      const targetUrl = encodeURIComponent('https://openapi.twse.com.tw/v1/exchangeReport/TWT49U');
+      const res = await fetch(proxyUrl + targetUrl);
+
+      if (!res.ok) throw new Error('Network response was not ok');
       const data = await res.json();
       let updatedCount = 0;
 
@@ -620,7 +631,8 @@ export default function App() {
       }));
       alert(`掃描完成！成功同步 ${updatedCount} 檔即將除息的 ETF 資料。`);
     } catch(e) {
-      alert('證交所連線失敗，請稍後再試。');
+      console.error("TWSE Fetch Error:", e);
+      alert('證交所連線失敗（可能為代理伺服器忙碌），請稍後再試。');
     } finally {
       setIsScanningTwse(false);
     }
@@ -639,7 +651,7 @@ export default function App() {
     <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V88</h1>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V89</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1 shadow-inner">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
@@ -657,17 +669,17 @@ export default function App() {
         </div>
       </header>
 
-      {/* V88 智能配息雷達 (Upcoming Events + TWSE Scanner) */}
+      {/* V89 智能配息雷達 (Upcoming Events + TWSE Proxy Scanner) */}
       <div className="mb-8">
         <div className="bg-slate-900 border border-emerald-900/50 rounded-xl p-4 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><BellRing size={80} /></div>
             
             <div className="flex justify-between items-center mb-3">
                 <h2 className="text-sm font-bold text-emerald-400 flex items-center gap-2"><BellRing size={16} /> 近期戰情報告 (配息提醒)</h2>
-                {/* 證交所 API 掃描按鈕 */}
-                <button onClick={handleScanTWSE} disabled={isScanningTwse} className="px-3 py-1.5 bg-emerald-900/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-700/50 hover:bg-emerald-800 hover:text-white transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(5,150,105,0.2)]">
+                {/* 證交所 API 代理掃描按鈕 */}
+                <button onClick={handleScanTWSE} disabled={isScanningTwse} className="px-3 py-1.5 bg-emerald-900/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-700/50 hover:bg-emerald-800 hover:text-white transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(5,150,105,0.2)] disabled:opacity-50">
                     {isScanningTwse ? <Loader2 size={12} className="animate-spin"/> : <Search size={12}/>} 
-                    {isScanningTwse ? '掃描中...' : '掃描證交所公告'}
+                    {isScanningTwse ? '連線同步中...' : '掃描證交所公告'}
                 </button>
             </div>
             
@@ -989,7 +1001,7 @@ export default function App() {
                               </div>
                               
                               <div>
-                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (自動過濾除息資格)</div>
+                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (動態過濾買進日)</div>
                                   <div className="space-y-2">
                                     {r.details?.map((d: any, i: number) => (
                                       <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-colors gap-3">
