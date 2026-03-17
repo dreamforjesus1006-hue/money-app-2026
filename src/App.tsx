@@ -9,7 +9,7 @@ import {
   X, ShoppingCart, ArrowUp, ArrowDown, Wifi, WifiOff, ChevronDown,
   ChevronUp, Calendar, CalendarDays, CheckCircle2, AlertTriangle, Plus,
   Trophy, Crown, Zap, Target, Swords, Coins, Wallet, MessageSquareText,
-  BellRing
+  BellRing, Search
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
@@ -59,7 +59,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 87;
+const APP_SCHEMA_VERSION = 88;
 const LOCAL_KEY = 'baozutang_local';
 
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
@@ -238,7 +238,6 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     const stockIntTotal = staticStockInt + marginInt;
     const healthTaxReal = divActualTotal > 0 ? 0 : healthTaxProjected;
     
-    // V87: 判斷是否為實際花費
     const rec = monthlyRecords[`${selectedYear}_${m}`] || {};
     const otherInc = safeNum(rec.otherIncome);
     const isActualLife = rec.livingExpense !== undefined;
@@ -246,7 +245,7 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
 
     flows.push({
       month: m, otherInc, divProjected: divInProjected, divActualTotal, loanOut, creditOut, stockInt: stockIntTotal, 
-      life: lifeExp, isActualLife, budgetLife: safeNum(taxStatus.livingExpenses), // V87 加入實際花費旗標
+      life: lifeExp, isActualLife, budgetLife: safeNum(taxStatus.livingExpenses),
       healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact,
       net: divUsed + otherInc - loanOut - creditOut - stockIntTotal - lifeExp - healthTaxReal - monthlyIncomeTaxImpact,
       details: contributingEtfs,
@@ -316,20 +315,15 @@ const StorageService = {
   clearLocal: () => { try { localStorage.removeItem(LOCAL_KEY); } catch {} }
 };
 
-const parseCsvPriceMap = (text: string) => {
-  const map = new Map<string, number>();
-  text.trim().split(/\r?\n/).forEach((r) => { const cols = r.split(',').map((x) => x.trim()); if (cols.length >= 2 && cols[0] && cols[0].toLowerCase() !== 'code') { const price = parseFloat(cols[1]); if (Number.isFinite(price)) map.set(cols[0], price); } });
-  return map;
-};
-
 export default function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [dataSrc, setDataSrc] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
   const [isUpdatingPrices, setIsUpdatingPrices] = useState(false);
+  const [isScanningTwse, setIsScanningTwse] = useState(false);
   
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [etfs, setEtfs] = useState<ETF[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [stockLoan, setStockLoan] = useState<StockLoan>(DEFAULT_STOCK_LOAN);
@@ -436,7 +430,7 @@ export default function App() {
     return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach, avatar: av, combatLogs: logs };
   }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length, combatPower]);
 
-  // V87: 智能配息雷達 (搜尋未來即將到來的除息/領息日)
+  // V87: 近期戰情報告 (未來除權息事件過濾)
   const upcomingEvents = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -457,7 +451,7 @@ export default function App() {
       }
     });
 
-    return events.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime()).slice(0, 4); // 取最接近的 4 個事件
+    return events.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime()).slice(0, 4);
   }, [etfs]);
 
   const snowballData = useMemo(() => {
@@ -555,10 +549,81 @@ export default function App() {
     setIsUpdatingPrices(true);
     try {
       const url = cloudConfig.priceSourceUrl.includes('/edit') ? cloudConfig.priceSourceUrl.replace(/\/edit.*$/, '/export?format=csv') : cloudConfig.priceSourceUrl;
-      const res = await fetch(url); const text = await res.text(); const priceMap = parseCsvPriceMap(text);
-      setEtfs((prev) => prev.map((e) => { const key = (e.code || e.id || '').trim(); return priceMap.has(key) ? { ...e, currentPrice: priceMap.get(key)! } : e; }));
-      alert('行情更新成功！');
-    } catch (e) { alert('更新失敗'); } finally { setIsUpdatingPrices(false); }
+      const res = await fetch(url); 
+      const text = await res.text(); 
+      
+      const priceMap = new Map<string, any>();
+      text.trim().split(/\r?\n/).forEach((r) => { 
+        const cols = r.split(',').map((x) => x.trim()); 
+        if (cols.length >= 2 && cols[0] && cols[0].toLowerCase() !== 'code') { 
+          const price = parseFloat(cols[1]); 
+          const divAmount = cols[2] ? parseFloat(cols[2]) : undefined;
+          const exDate = cols[3] || undefined;
+          const payDate = cols[4] || undefined;
+          if (Number.isFinite(price)) priceMap.set(cols[0], { price, divAmount, exDate, payDate }); 
+        } 
+      });
+
+      setEtfs((prev) => prev.map((e) => { 
+        const key = (e.code || e.id || '').trim(); 
+        const info = priceMap.get(key);
+        if (info) {
+           let updatedE = { ...e, currentPrice: info.price };
+           if (info.divAmount !== undefined && !isNaN(info.divAmount)) updatedE.dividendPerShare = info.divAmount;
+           return updatedE;
+        }
+        return e; 
+      }));
+      alert('行情與配息資訊更新成功！');
+    } catch (e) { alert('更新失敗，請檢查網址或網路狀態。'); } finally { setIsUpdatingPrices(false); }
+  };
+
+  // V88: 證交所 OpenAPI 自動抓取
+  const handleScanTWSE = async () => {
+    setIsScanningTwse(true);
+    try {
+      const res = await fetch('https://openapi.twse.com.tw/v1/exchangeReport/TWT49U');
+      const data = await res.json();
+      let updatedCount = 0;
+
+      setEtfs(prev => prev.map(etf => {
+          const match = data.find((d: any) => d.Code === etf.code);
+          if(!match) return etf;
+
+          const rocStr = match.Date;
+          if(!rocStr || rocStr.length !== 7) return etf;
+          const year = parseInt(rocStr.substring(0,3)) + 1911;
+          const month = rocStr.substring(3,5);
+          const day = rocStr.substring(5,7);
+          const exDateStr = `${year}-${month}-${day}`;
+          const amount = parseFloat(match.Dividend || '0');
+
+          if (amount === 0) return etf;
+
+          const currentSchedule = etf.schedule || [];
+          const existingIdx = currentSchedule.findIndex(ev => ev.exDate === exDateStr);
+          let newSchedule = [...currentSchedule];
+
+          if (existingIdx >= 0) {
+              newSchedule[existingIdx].amount = amount;
+          } else {
+              const emptyIdx = newSchedule.findIndex(ev => ev.year === year && !ev.exDate);
+              if (emptyIdx >= 0) {
+                  newSchedule[emptyIdx].exDate = exDateStr;
+                  newSchedule[emptyIdx].amount = amount;
+              } else {
+                  newSchedule.push({ id: `auto-${Date.now()}`, year, name: `${year} 證交所同步`, exDate: exDateStr, payDate: '', amount, isActual: false });
+              }
+          }
+          updatedCount++;
+          return { ...etf, schedule: newSchedule, dividendPerShare: amount };
+      }));
+      alert(`掃描完成！成功同步 ${updatedCount} 檔即將除息的 ETF 資料。`);
+    } catch(e) {
+      alert('證交所連線失敗，請稍後再試。');
+    } finally {
+      setIsScanningTwse(false);
+    }
   };
 
   const handleReset = async () => {
@@ -574,7 +639,7 @@ export default function App() {
     <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V87</h1>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V88</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1 shadow-inner">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
@@ -583,7 +648,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-emerald-400 hover:bg-emerald-900/50 hover:scale-105 transition-all shadow-md" title="更新行情"><RefreshCw size={18} className={isUpdatingPrices ? "animate-spin" : ""} /></button>
+          <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-emerald-400 hover:bg-emerald-900/50 hover:scale-105 transition-all shadow-md" title="更新行情 (包含雲端配息設定)"><RefreshCw size={18} className={isUpdatingPrices ? "animate-spin" : ""} /></button>
           <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded-lg border border-slate-700 hover:bg-slate-700 hover:scale-105 transition-all shadow-md" title="設定"><Settings size={18} /></button>
           <button onClick={handleReset} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-red-400 hover:bg-red-900/50 hover:scale-105 transition-all shadow-md" title="重置"><RotateCcw size={18} /></button>
           <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => { try { const raw = JSON.parse(ev.target?.result as string); const d = sanitizePayload(raw); setEtfs(d.etfs); setLoans(d.loans || []); setStockLoan(d.stockLoan || DEFAULT_STOCK_LOAN); setGlobalMarginLoan(d.globalMarginLoan || DEFAULT_GLOBAL_MARGIN); setCreditLoan(d.creditLoan || DEFAULT_CREDIT); setTaxStatus(d.taxStatus || DEFAULT_TAX); setAllocation(d.allocation || DEFAULT_ALLOC); setCloudConfig(d.cloudConfig || DEFAULT_CLOUD); setActualDetails(d.actualDetails || {}); setMonthlyRecords(d.monthlyRecords || {}); alert('匯入成功！戰情室資料已更新。'); } catch (err) { alert('檔案格式錯誤'); } }; r.readAsText(f); }} className="hidden" accept=".json" />
@@ -592,13 +657,22 @@ export default function App() {
         </div>
       </header>
 
-      {/* V87 智能配息雷達 (Upcoming Events) */}
+      {/* V88 智能配息雷達 (Upcoming Events + TWSE Scanner) */}
       <div className="mb-8">
         <div className="bg-slate-900 border border-emerald-900/50 rounded-xl p-4 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><BellRing size={80} /></div>
-            <h2 className="text-sm font-bold text-emerald-400 flex items-center gap-2 mb-3"><BellRing size={16} /> 近期戰情報告 (配息提醒)</h2>
+            
+            <div className="flex justify-between items-center mb-3">
+                <h2 className="text-sm font-bold text-emerald-400 flex items-center gap-2"><BellRing size={16} /> 近期戰情報告 (配息提醒)</h2>
+                {/* 證交所 API 掃描按鈕 */}
+                <button onClick={handleScanTWSE} disabled={isScanningTwse} className="px-3 py-1.5 bg-emerald-900/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-700/50 hover:bg-emerald-800 hover:text-white transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(5,150,105,0.2)]">
+                    {isScanningTwse ? <Loader2 size={12} className="animate-spin"/> : <Search size={12}/>} 
+                    {isScanningTwse ? '掃描中...' : '掃描證交所公告'}
+                </button>
+            </div>
+            
             {upcomingEvents.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 relative z-10">
                     {upcomingEvents.map((ev, i) => (
                         <div key={i} className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 flex flex-col gap-1 hover:border-emerald-700/50 transition-colors">
                             <div className="flex items-center justify-between">
@@ -613,7 +687,7 @@ export default function App() {
                     ))}
                 </div>
             ) : (
-                <div className="text-sm text-slate-500 py-2">目前沒有即將到來的除息或發放日。</div>
+                <div className="text-sm text-slate-500 py-2 relative z-10">目前行事曆沒有即將到來的事件。您可以點擊右上角「掃描證交所公告」自動抓取近期除息資訊。</div>
             )}
         </div>
       </div>
@@ -876,7 +950,6 @@ export default function App() {
                       <td className="p-3 text-orange-400/80">{formatMoney(r.creditOut)}</td>
                       <td className="p-3 text-blue-300/80">{formatMoney(r.stockInt)}</td>
                       
-                      {/* V87: 實際生活費 vs 預算 雙軌顯示 */}
                       <td className="p-3">
                         {r.isActualLife ? (
                            <div className="text-yellow-400 font-bold" title={`本月預算: ${formatMoney(r.budgetLife)}`}>{formatMoney(r.life)}<br/><span className="text-[8px] text-yellow-600/80 font-sans tracking-widest">(實支)</span></div>
@@ -989,6 +1062,7 @@ export default function App() {
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                 <label className="text-slate-400 block mb-2 font-bold text-xs uppercase tracking-wider flex items-center gap-2"><Wifi size={14} className="text-blue-400"/> Google Sheet CSV 行情連結</label>
                 <input type="text" value={cloudConfig.priceSourceUrl} onChange={(e) => setCloudConfig({ ...cloudConfig, priceSourceUrl: e.target.value })} className="w-full bg-slate-900 p-2.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500 text-xs text-slate-300" placeholder="https://docs.google.com/spreadsheets/..." />
+                <div className="text-[10px] text-slate-500 mt-2">V88: 您可以在 CSV 檔加入「預估配息」、「除息日」、「發放日」欄位，系統將自動同步至行事曆。格式：<span className="font-mono text-emerald-400">代號,現價,配息金額,2026-01-01,2026-02-01</span></div>
               </div>
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1023,7 +1097,7 @@ export default function App() {
                   <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
                   <h4 className="text-blue-400 font-bold mb-3 text-xs uppercase tracking-wider">日常消耗 & 其他借貸</h4>
                   <div className="space-y-3">
-                    <div><label className="text-slate-400 text-[10px] font-bold block mb-1">預設月生活費 (無輸入實支時套用)</label><input type="number" value={taxStatus.livingExpenses} onChange={(e) => setTaxStatus({ ...taxStatus, livingExpenses: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg outline-none border border-transparent focus:border-blue-500 text-emerald-400 font-mono" /></div>
+                    <div><label className="text-slate-400 text-[10px] font-bold block mb-1">全域預設月生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={(e) => setTaxStatus({ ...taxStatus, livingExpenses: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg outline-none border border-transparent focus:border-blue-500 text-emerald-400 font-mono" /></div>
                     <div className="flex gap-3 bg-slate-900 p-2 rounded-lg">
                         <div className="flex-1"><label className="text-slate-500 text-[10px] block mb-1">信貸餘額</label><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({ ...creditLoan, principal: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
                         <div className="w-16"><label className="text-slate-500 text-[10px] block mb-1">利率%</label><input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({ ...creditLoan, rate: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
