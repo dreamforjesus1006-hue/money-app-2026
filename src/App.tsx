@@ -8,7 +8,8 @@ import {
   TrendingUp, RefreshCw, PieChart as PieIcon, ShieldCheck, List, Trash2,
   X, ShoppingCart, ArrowUp, ArrowDown, Wifi, WifiOff, ChevronDown,
   ChevronUp, Calendar, CalendarDays, CheckCircle2, AlertTriangle, Plus,
-  Trophy, Crown, Zap, Target, Swords, Coins, Wallet, MessageSquareText
+  Trophy, Crown, Zap, Target, Swords, Coins, Wallet, MessageSquareText,
+  BellRing
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
@@ -58,7 +59,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 86;
+const APP_SCHEMA_VERSION = 87;
 const LOCAL_KEY = 'baozutang_local';
 
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
@@ -164,7 +165,6 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
         let payout = safeNum(e.dividendPerShare);
         if (e.dividendType === 'annual' && e.payMonths.length > 0) payout /= e.payMonths.length;
         
-        // V86 修復：預估配息也會根據交易時間軸計算資格股數
         let qualifiedSharesEstimate = 0;
         if (e.lots && e.lots.length > 0) {
           e.lots.forEach((lot) => {
@@ -212,7 +212,6 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
       creditOut = creditRate === 0 ? Math.floor(creditPrincipal / totalCreditMonths) : Math.floor((creditPrincipal * creditRate * Math.pow(1 + creditRate, totalCreditMonths)) / (Math.pow(1 + creditRate, totalCreditMonths) - 1));
     }
 
-    // V86 修復：維持利息現在會根據時間軸（交易買進日）精準計算當月有效融資額
     const staticStockInt = Math.floor((safeNum(stockLoan.principal) * (safeNum(stockLoan.rate) / 100)) / 12) + Math.floor((safeNum(globalMarginLoan.principal) * (safeNum(globalMarginLoan.rate) / 100)) / 12);
     
     let dynamicMarginInt = 0;
@@ -222,12 +221,11 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
         e.lots.forEach((lot) => {
           const lotD = new Date(lot.date);
           if (!isNaN(lotD.getTime())) {
-            // 如果這筆交易的年份早於當前年份，或同年但月份小於等於當前月份，才計算融資利息
             if (lotD.getFullYear() < selectedYear || (lotD.getFullYear() === selectedYear && lotD.getMonth() + 1 <= m)) {
               activeMarginForMonth += safeNum(lot.margin);
             }
           } else {
-            activeMarginForMonth += safeNum(lot.margin); // 無效日期則強制納入
+            activeMarginForMonth += safeNum(lot.margin);
           }
         });
       } else {
@@ -238,14 +236,18 @@ const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, cred
     
     const marginInt = Math.floor(dynamicMarginInt);
     const stockIntTotal = staticStockInt + marginInt;
-
     const healthTaxReal = divActualTotal > 0 ? 0 : healthTaxProjected;
+    
+    // V87: 判斷是否為實際花費
     const rec = monthlyRecords[`${selectedYear}_${m}`] || {};
     const otherInc = safeNum(rec.otherIncome);
-    const lifeExp = rec.livingExpense !== undefined ? safeNum(rec.livingExpense) : safeNum(taxStatus.livingExpenses);
+    const isActualLife = rec.livingExpense !== undefined;
+    const lifeExp = isActualLife ? safeNum(rec.livingExpense) : safeNum(taxStatus.livingExpenses);
 
     flows.push({
-      month: m, otherInc, divProjected: divInProjected, divActualTotal, loanOut, creditOut, stockInt: stockIntTotal, life: lifeExp, healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact,
+      month: m, otherInc, divProjected: divInProjected, divActualTotal, loanOut, creditOut, stockInt: stockIntTotal, 
+      life: lifeExp, isActualLife, budgetLife: safeNum(taxStatus.livingExpenses), // V87 加入實際花費旗標
+      healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact,
       net: divUsed + otherInc - loanOut - creditOut - stockIntTotal - lifeExp - healthTaxReal - monthlyIncomeTaxImpact,
       details: contributingEtfs,
     });
@@ -434,6 +436,30 @@ export default function App() {
     return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach, avatar: av, combatLogs: logs };
   }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length, combatPower]);
 
+  // V87: 智能配息雷達 (搜尋未來即將到來的除息/領息日)
+  const upcomingEvents = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const events: { type: 'ex' | 'pay', dateObj: Date, dateStr: string, etfName: string, amount: number }[] = [];
+
+    etfs.forEach(e => {
+      if (e.schedule) {
+        e.schedule.forEach(ev => {
+          if (ev.exDate) {
+            const d = new Date(ev.exDate);
+            if (!isNaN(d.getTime()) && d >= today) events.push({ type: 'ex', dateObj: d, dateStr: ev.exDate, etfName: e.name, amount: ev.amount });
+          }
+          if (ev.payDate) {
+            const d = new Date(ev.payDate);
+            if (!isNaN(d.getTime()) && d >= today) events.push({ type: 'pay', dateObj: d, dateStr: ev.payDate, etfName: e.name, amount: ev.amount });
+          }
+        });
+      }
+    });
+
+    return events.sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime()).slice(0, 4); // 取最接近的 4 個事件
+  }, [etfs]);
+
   const snowballData = useMemo(() => {
     const avgYield = totalValue > 0 ? totalDividend / totalValue : 0.05;
     const data: any[] = []; let curWealth = totalValue;
@@ -548,7 +574,7 @@ export default function App() {
     <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V86</h1>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V87</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1 shadow-inner">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
@@ -566,9 +592,34 @@ export default function App() {
         </div>
       </header>
 
+      {/* V87 智能配息雷達 (Upcoming Events) */}
+      <div className="mb-8">
+        <div className="bg-slate-900 border border-emerald-900/50 rounded-xl p-4 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><BellRing size={80} /></div>
+            <h2 className="text-sm font-bold text-emerald-400 flex items-center gap-2 mb-3"><BellRing size={16} /> 近期戰情報告 (配息提醒)</h2>
+            {upcomingEvents.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {upcomingEvents.map((ev, i) => (
+                        <div key={i} className="bg-slate-950/80 p-3 rounded-lg border border-slate-800 flex flex-col gap-1 hover:border-emerald-700/50 transition-colors">
+                            <div className="flex items-center justify-between">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${ev.type === 'ex' ? 'bg-orange-900/40 text-orange-400 border border-orange-800/50' : 'bg-emerald-900/40 text-emerald-400 border border-emerald-800/50'}`}>
+                                    {ev.type === 'ex' ? '即將除息' : '即將發放'}
+                                </span>
+                                <span className="text-xs font-mono text-slate-300">{ev.dateStr}</span>
+                            </div>
+                            <div className="text-sm font-bold text-slate-100 truncate mt-1">{ev.etfName}</div>
+                            <div className="text-[10px] text-slate-500">預估: <span className="text-yellow-400 font-mono">{ev.amount}</span> 元/股</div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="text-sm text-slate-500 py-2">目前沒有即將到來的除息或發放日。</div>
+            )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         <div className="xl:col-span-4 space-y-6">
-          
           <div className="bg-slate-900 p-1 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
             <div className="bg-slate-900 p-5 rounded-xl h-full w-full">
               <div className="flex items-center gap-4 mb-4">
@@ -824,7 +875,16 @@ export default function App() {
                       <td className="p-3 text-red-400/80">{formatMoney(r.loanOut)}</td>
                       <td className="p-3 text-orange-400/80">{formatMoney(r.creditOut)}</td>
                       <td className="p-3 text-blue-300/80">{formatMoney(r.stockInt)}</td>
-                      <td className="p-3 text-slate-400">{formatMoney(r.life)}</td>
+                      
+                      {/* V87: 實際生活費 vs 預算 雙軌顯示 */}
+                      <td className="p-3">
+                        {r.isActualLife ? (
+                           <div className="text-yellow-400 font-bold" title={`本月預算: ${formatMoney(r.budgetLife)}`}>{formatMoney(r.life)}<br/><span className="text-[8px] text-yellow-600/80 font-sans tracking-widest">(實支)</span></div>
+                        ) : (
+                           <div className="text-slate-500">{formatMoney(r.life)}<br/><span className="text-[8px] opacity-40 font-sans tracking-widest">(預算)</span></div>
+                        )}
+                      </td>
+
                       <td className="p-3 text-purple-400/70 text-[9px]">{formatMoney(r.healthTax)}<br/><span className="opacity-40">+{formatMoney(r.incomeTax)}</span></td>
                       <td className={`p-3 text-right font-bold text-sm ${r.net >= 0 ? 'text-emerald-400 drop-shadow-[0_0_5px_rgba(52,211,153,0.3)]' : 'text-red-400'}`}>{formatMoney(r.net)}</td>
                     </tr>
@@ -836,11 +896,12 @@ export default function App() {
                               
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 pb-6 border-b border-slate-800">
                                   <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                                      <div className="text-[11px] text-slate-400 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-500"></div> 本月生活費設定</div>
+                                      <div className="text-[11px] text-slate-400 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div> 本月生活費結算</div>
                                       <div className="flex items-center gap-3">
-                                          <input type="number" placeholder={`預設值: ${formatMoney(taxStatus.livingExpenses)}`} value={monthlyRecords[`${selectedYear}_${r.month}`]?.livingExpense ?? ''} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'livingExpense', e.target.value === '' ? undefined : safeNum(e.target.value))} className="w-full bg-slate-950 border border-slate-700 focus:border-slate-500 rounded-lg px-3 py-2 text-sm text-white outline-none transition-colors" onClick={e => e.stopPropagation()} />
+                                          <span className="text-slate-500 text-xs whitespace-nowrap">實際支出:</span>
+                                          <input type="number" placeholder={`留白則套用預算 ${formatMoney(taxStatus.livingExpenses)}`} value={monthlyRecords[`${selectedYear}_${r.month}`]?.livingExpense ?? ''} onChange={e => updateMonthlyRecord(selectedYear, r.month, 'livingExpense', e.target.value === '' ? undefined : safeNum(e.target.value))} className="w-full bg-slate-950 border border-slate-700 focus:border-yellow-500 rounded-lg px-3 py-2 text-sm text-yellow-400 font-bold outline-none transition-colors" onClick={e => e.stopPropagation()} />
                                       </div>
-                                      <div className="text-[9px] text-slate-600 mt-2">留白將自動套用全域預設值</div>
+                                      <div className="text-[9px] text-slate-600 mt-2">每月預算設定為 {formatMoney(taxStatus.livingExpenses)}，輸入實際金額以精準計算淨流。</div>
                                   </div>
                                   <div className="bg-blue-950/10 rounded-xl p-4 border border-blue-900/30">
                                       <div className="text-[11px] text-blue-400 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div> 額外戰利品 (其他收入)</div>
@@ -855,7 +916,7 @@ export default function App() {
                               </div>
                               
                               <div>
-                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (動態過濾買進日)</div>
+                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (自動過濾除息資格)</div>
                                   <div className="space-y-2">
                                     {r.details?.map((d: any, i: number) => (
                                       <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-colors gap-3">
