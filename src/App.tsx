@@ -9,7 +9,7 @@ import {
   X, ShoppingCart, ArrowUp, ArrowDown, Wifi, WifiOff, ChevronDown,
   ChevronUp, Calendar, CalendarDays, CheckCircle2, AlertTriangle, Plus,
   Trophy, Crown, Zap, Target, Swords, Coins, Wallet, MessageSquareText,
-  BellRing, Search
+  BellRing, Search, Database
 } from 'lucide-react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
@@ -45,7 +45,7 @@ interface StockLoan { principal: number; rate: number; maintenanceLimit?: number
 interface CreditLoan { principal: number; rate: number; totalMonths: number; paidMonths: number; }
 interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: number; hasSpouse: boolean; isDisabled: boolean; disabilityCount: number; dividendTaxableRatio: number; }
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
-interface CloudConfig { priceSourceUrl: string; enabled: boolean; }
+interface CloudConfig { priceSourceUrl: string; enabled: boolean; finMindToken?: string; }
 interface ActualDetails { [key: string]: number; }
 interface MonthlyRecord { livingExpense?: number; otherIncome?: number; isTaxable?: boolean; }
 type MonthlyRecords = Record<string, MonthlyRecord>;
@@ -59,7 +59,7 @@ type PersistedPayload = {
 // ==========================================
 // 3. 預設資料與常數
 // ==========================================
-const APP_SCHEMA_VERSION = 89;
+const APP_SCHEMA_VERSION = 92;
 const LOCAL_KEY = 'baozutang_local';
 
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
@@ -67,7 +67,7 @@ const DEFAULT_GLOBAL_MARGIN: StockLoan = { rate: 4.5, principal: 0 };
 const DEFAULT_CREDIT: CreditLoan = { rate: 4.05, totalMonths: 84, principal: 0, paidMonths: 0 };
 const DEFAULT_TAX: TaxStatus = { salaryIncome: 589200, livingExpenses: 70000, hasSpouse: true, isDisabled: true, dependents: 0, disabilityCount: 1, dividendTaxableRatio: 30 };
 const DEFAULT_ALLOC: AllocationConfig = { activeRatio: 5, hedgingRatio: 15, dividendRatio: 80, totalFunds: 14500000 };
-const DEFAULT_CLOUD: CloudConfig = { priceSourceUrl: '', enabled: true };
+const DEFAULT_CLOUD: CloudConfig = { priceSourceUrl: '', enabled: true, finMindToken: '' };
 
 const BROKERAGE_RATE = 0.001425;
 const COLORS = { dividend: '#10b981', hedging: '#f59e0b', active: '#a855f7' };
@@ -284,7 +284,7 @@ const sanitizePayload = (d: any): PersistedPayload => {
       globalMarginLoan: d?.globalMarginLoan || DEFAULT_GLOBAL_MARGIN, 
       taxStatus: { ...DEFAULT_TAX, ...(d?.taxStatus || {}) }, 
       allocation: d?.allocation || DEFAULT_ALLOC, 
-      cloudConfig: d?.cloudConfig || DEFAULT_CLOUD, 
+      cloudConfig: { ...DEFAULT_CLOUD, ...(d?.cloudConfig || {}) }, 
       actualDetails: newActuals, 
       monthlyRecords: d?.monthlyRecords || {},
       _meta: d?._meta 
@@ -436,7 +436,6 @@ export default function App() {
     return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach, avatar: av, combatLogs: logs };
   }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length, combatPower]);
 
-  // V87: 近期戰情報告
   const upcomingEvents = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -584,55 +583,83 @@ export default function App() {
     } catch (e) { alert('更新失敗，請檢查網址或網路狀態。'); } finally { setIsUpdatingPrices(false); }
   };
 
-  // V89: CORS Proxy 替身抓取系統
-  const handleScanTWSE = async () => {
+  // V92: 終極防護，改用開源 FinMind API 直接抓取
+  const handleScanAPI = async () => {
     setIsScanningTwse(true);
+    let updatedCount = 0;
+    const tokenParam = cloudConfig.finMindToken ? `&token=${cloudConfig.finMindToken}` : '';
+    
     try {
-      // 使用 CORS Proxy 繞過前端跨域限制
-      const proxyUrl = 'https://api.allorigins.win/raw?url=';
-      const targetUrl = encodeURIComponent('https://openapi.twse.com.tw/v1/exchangeReport/TWT49U');
-      const res = await fetch(proxyUrl + targetUrl);
+      const newEtfs = await Promise.all(etfs.map(async (etf) => {
+          if (!etf.code || !etf.category || etf.category === 'hedging') return etf; // 跳過避險類
+          try {
+              // 連線至 FinMind API 抓取特定年份資料
+              const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockDividendResult&data_id=${etf.code}&start_date=${selectedYear}-01-01${tokenParam}`;
+              const res = await fetch(url);
+              const data = await res.json();
+              
+              if (data.status === 200 && data.data && data.data.length > 0) {
+                  let currentSchedule = [...(etf.schedule || [])];
+                  let modified = false;
 
-      if (!res.ok) throw new Error('Network response was not ok');
-      const data = await res.json();
-      let updatedCount = 0;
+                  data.data.forEach((divEvent: any) => {
+                      const exDateStr = divEvent.date; // 除息日
+                      const payDateStr = divEvent.cash_payout_date || ''; // 發放日
+                      const amount = divEvent.cash_dividend;
 
-      setEtfs(prev => prev.map(etf => {
-          const match = data.find((d: any) => d.Code === etf.code);
-          if(!match) return etf;
+                      if (!exDateStr || amount === undefined || amount === 0) return;
+                      
+                      const evYear = parseInt(exDateStr.split('-')[0], 10);
+                      if (evYear !== selectedYear) return;
 
-          const rocStr = match.Date;
-          if(!rocStr || rocStr.length !== 7) return etf;
-          const year = parseInt(rocStr.substring(0,3)) + 1911;
-          const month = rocStr.substring(3,5);
-          const day = rocStr.substring(5,7);
-          const exDateStr = `${year}-${month}-${day}`;
-          const amount = parseFloat(match.Dividend || '0');
+                      const existingIdx = currentSchedule.findIndex(ev => ev.exDate === exDateStr);
+                      if (existingIdx >= 0) {
+                          if (currentSchedule[existingIdx].amount !== amount || currentSchedule[existingIdx].payDate !== payDateStr) {
+                              currentSchedule[existingIdx].amount = amount;
+                              if(payDateStr) currentSchedule[existingIdx].payDate = payDateStr;
+                              modified = true;
+                          }
+                      } else {
+                          const emptyIdx = currentSchedule.findIndex(ev => ev.year === evYear && !ev.exDate);
+                          if (emptyIdx >= 0) {
+                              currentSchedule[emptyIdx].exDate = exDateStr;
+                              currentSchedule[emptyIdx].payDate = payDateStr;
+                              currentSchedule[emptyIdx].amount = amount;
+                          } else {
+                              currentSchedule.push({
+                                  id: `auto-${Date.now()}-${Math.random()}`,
+                                  year: evYear,
+                                  name: `${evYear} 自動同步`,
+                                  exDate: exDateStr,
+                                  payDate: payDateStr,
+                                  amount: amount,
+                                  isActual: false
+                              });
+                          }
+                          modified = true;
+                      }
+                  });
 
-          if (amount === 0) return etf;
-
-          const currentSchedule = etf.schedule || [];
-          const existingIdx = currentSchedule.findIndex(ev => ev.exDate === exDateStr);
-          let newSchedule = [...currentSchedule];
-
-          if (existingIdx >= 0) {
-              newSchedule[existingIdx].amount = amount;
-          } else {
-              const emptyIdx = newSchedule.findIndex(ev => ev.year === year && !ev.exDate);
-              if (emptyIdx >= 0) {
-                  newSchedule[emptyIdx].exDate = exDateStr;
-                  newSchedule[emptyIdx].amount = amount;
-              } else {
-                  newSchedule.push({ id: `auto-${Date.now()}`, year, name: `${year} 證交所同步`, exDate: exDateStr, payDate: '', amount, isActual: false });
+                  if (modified) {
+                      updatedCount++;
+                      return { ...etf, schedule: currentSchedule };
+                  }
               }
+          } catch (err) {
+              console.warn(`FinMind fetch error for ${etf.code}:`, err);
           }
-          updatedCount++;
-          return { ...etf, schedule: newSchedule, dividendPerShare: amount };
+          return etf;
       }));
-      alert(`掃描完成！成功同步 ${updatedCount} 檔即將除息的 ETF 資料。`);
+
+      setEtfs(newEtfs);
+      if (updatedCount > 0) {
+          alert(`掃描完成！成功透過 FinMind API 同步 ${updatedCount} 檔 ETF 的「除息日」與「發放日」。`);
+      } else {
+          alert(`掃描完成！${selectedYear} 年目前沒有新的配息資料。`);
+      }
     } catch(e) {
-      console.error("TWSE Fetch Error:", e);
-      alert('證交所連線失敗（可能為代理伺服器忙碌），請稍後再試。');
+      console.error("API Fetch Error:", e);
+      alert('API 連線失敗，請檢查網路或 API Token 狀態。');
     } finally {
       setIsScanningTwse(false);
     }
@@ -651,7 +678,7 @@ export default function App() {
     <div className="min-h-screen p-4 md:p-8 bg-slate-950 text-white font-sans selection:bg-emerald-500/30">
       <header className="mb-8 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V89</h1>
+          <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 flex items-center gap-2 drop-shadow-md"><Calculator className="text-emerald-400"/> 包租唐戰情室 V92</h1>
           <div className="flex items-center gap-2 mt-2 text-xs">
             <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-1 shadow-inner">
               {saveStatus === 'saving' ? <Loader2 size={12} className="animate-spin text-amber-400" /> : saveStatus === 'saved' ? <CheckCircle2 size={12} className="text-emerald-400" /> : saveStatus === 'error' ? <AlertTriangle size={12} className="text-red-400" /> : dataSrc === 'cloud' ? <Wifi size={12} className="text-blue-400" /> : <WifiOff size={12} className="text-slate-500" />}
@@ -660,7 +687,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-emerald-400 hover:bg-emerald-900/50 hover:scale-105 transition-all shadow-md" title="更新行情 (包含雲端配息設定)"><RefreshCw size={18} className={isUpdatingPrices ? "animate-spin" : ""} /></button>
+          <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-emerald-400 hover:bg-emerald-900/50 hover:scale-105 transition-all shadow-md" title="更新行情"><RefreshCw size={18} className={isUpdatingPrices ? "animate-spin" : ""} /></button>
           <button onClick={() => setShowSettings(true)} className="p-2 bg-slate-800 rounded-lg border border-slate-700 hover:bg-slate-700 hover:scale-105 transition-all shadow-md" title="設定"><Settings size={18} /></button>
           <button onClick={handleReset} className="p-2 bg-slate-800 rounded-lg border border-slate-700 text-red-400 hover:bg-red-900/50 hover:scale-105 transition-all shadow-md" title="重置"><RotateCcw size={18} /></button>
           <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => { try { const raw = JSON.parse(ev.target?.result as string); const d = sanitizePayload(raw); setEtfs(d.etfs); setLoans(d.loans || []); setStockLoan(d.stockLoan || DEFAULT_STOCK_LOAN); setGlobalMarginLoan(d.globalMarginLoan || DEFAULT_GLOBAL_MARGIN); setCreditLoan(d.creditLoan || DEFAULT_CREDIT); setTaxStatus(d.taxStatus || DEFAULT_TAX); setAllocation(d.allocation || DEFAULT_ALLOC); setCloudConfig(d.cloudConfig || DEFAULT_CLOUD); setActualDetails(d.actualDetails || {}); setMonthlyRecords(d.monthlyRecords || {}); alert('匯入成功！戰情室資料已更新。'); } catch (err) { alert('檔案格式錯誤'); } }; r.readAsText(f); }} className="hidden" accept=".json" />
@@ -669,17 +696,17 @@ export default function App() {
         </div>
       </header>
 
-      {/* V89 智能配息雷達 (Upcoming Events + TWSE Proxy Scanner) */}
+      {/* V92 智能配息雷達 (FinMind API 直連) */}
       <div className="mb-8">
         <div className="bg-slate-900 border border-emerald-900/50 rounded-xl p-4 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none"><BellRing size={80} /></div>
             
             <div className="flex justify-between items-center mb-3">
                 <h2 className="text-sm font-bold text-emerald-400 flex items-center gap-2"><BellRing size={16} /> 近期戰情報告 (配息提醒)</h2>
-                {/* 證交所 API 代理掃描按鈕 */}
-                <button onClick={handleScanTWSE} disabled={isScanningTwse} className="px-3 py-1.5 bg-emerald-900/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-700/50 hover:bg-emerald-800 hover:text-white transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(5,150,105,0.2)] disabled:opacity-50">
-                    {isScanningTwse ? <Loader2 size={12} className="animate-spin"/> : <Search size={12}/>} 
-                    {isScanningTwse ? '連線同步中...' : '掃描證交所公告'}
+                {/* FinMind API 掃描按鈕 */}
+                <button onClick={handleScanAPI} disabled={isScanningTwse} className="px-3 py-1.5 bg-emerald-900/40 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-700/50 hover:bg-emerald-800 hover:text-white transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(5,150,105,0.2)] disabled:opacity-50 disabled:cursor-not-allowed">
+                    {isScanningTwse ? <Loader2 size={12} className="animate-spin"/> : <Database size={12}/>} 
+                    {isScanningTwse ? '連線 FinMind 同步中...' : '連線 FinMind API 同步'}
                 </button>
             </div>
             
@@ -699,7 +726,7 @@ export default function App() {
                     ))}
                 </div>
             ) : (
-                <div className="text-sm text-slate-500 py-2 relative z-10">目前行事曆沒有即將到來的事件。您可以點擊右上角「掃描證交所公告」自動抓取近期除息資訊。</div>
+                <div className="text-sm text-slate-500 py-2 relative z-10">目前行事曆沒有即將到來的事件。您可以點擊右上角按鈕，透過 FinMind API 自動同步最新配息公告。</div>
             )}
         </div>
       </div>
@@ -1001,7 +1028,7 @@ export default function App() {
                               </div>
                               
                               <div>
-                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (動態過濾買進日)</div>
+                                  <div className="text-[11px] text-emerald-500/80 mb-3 font-bold uppercase tracking-wider flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> 實領股息對帳單 (自動過濾除息資格)</div>
                                   <div className="space-y-2">
                                     {r.details?.map((d: any, i: number) => (
                                       <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/50 p-3 rounded-lg border border-slate-800/80 hover:border-slate-700 transition-colors gap-3">
@@ -1074,7 +1101,13 @@ export default function App() {
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                 <label className="text-slate-400 block mb-2 font-bold text-xs uppercase tracking-wider flex items-center gap-2"><Wifi size={14} className="text-blue-400"/> Google Sheet CSV 行情連結</label>
                 <input type="text" value={cloudConfig.priceSourceUrl} onChange={(e) => setCloudConfig({ ...cloudConfig, priceSourceUrl: e.target.value })} className="w-full bg-slate-900 p-2.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500 text-xs text-slate-300" placeholder="https://docs.google.com/spreadsheets/..." />
-                <div className="text-[10px] text-slate-500 mt-2">V88: 您可以在 CSV 檔加入「預估配息」、「除息日」、「發放日」欄位，系統將自動同步至行事曆。格式：<span className="font-mono text-emerald-400">代號,現價,配息金額,2026-01-01,2026-02-01</span></div>
+                
+                {/* V92: 加入 FinMind Token 欄位 */}
+                <div className="mt-4 border-t border-slate-800 pt-4">
+                    <label className="text-slate-400 block mb-2 font-bold text-xs uppercase tracking-wider flex items-center gap-2"><Database size={14} className="text-emerald-400"/> FinMind API Token (選填)</label>
+                    <input type="text" value={cloudConfig.finMindToken || ''} onChange={(e) => setCloudConfig({ ...cloudConfig, finMindToken: e.target.value })} className="w-full bg-slate-900 p-2.5 rounded-lg border border-slate-700 outline-none focus:border-emerald-500 text-xs text-slate-300" placeholder="若免費額度(300次/時)不夠，可填寫您的專屬 Token" />
+                    <div className="text-[10px] text-slate-500 mt-2">系統已自動切換至台灣最大開源金融 API (FinMind)，無 Token 亦可直接使用免費額度自動抓取「除息日」與「發放日」！</div>
+                </div>
               </div>
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1111,57 +1144,4 @@ export default function App() {
                   <div className="space-y-3">
                     <div><label className="text-slate-400 text-[10px] font-bold block mb-1">全域預設月生活費</label><input type="number" value={taxStatus.livingExpenses} onChange={(e) => setTaxStatus({ ...taxStatus, livingExpenses: safeNum(e.target.value) })} className="w-full bg-slate-900 p-2 rounded-lg outline-none border border-transparent focus:border-blue-500 text-emerald-400 font-mono" /></div>
                     <div className="flex gap-3 bg-slate-900 p-2 rounded-lg">
-                        <div className="flex-1"><label className="text-slate-500 text-[10px] block mb-1">信貸餘額</label><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({ ...creditLoan, principal: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
-                        <div className="w-16"><label className="text-slate-500 text-[10px] block mb-1">利率%</label><input type="number" value={creditLoan.rate} onChange={(e) => setCreditLoan({ ...creditLoan, rate: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
-                    </div>
-                    <div className="flex gap-3 bg-slate-900 p-2 rounded-lg">
-                        <div className="flex-1"><label className="text-slate-500 text-[10px] block mb-1">借貸本金 (維持率)</label><input type="number" value={stockLoan.principal} onChange={(e) => setStockLoan({ ...stockLoan, principal: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
-                        <div className="w-16"><label className="text-slate-500 text-[10px] block mb-1">利率%</label><input type="number" value={stockLoan.rate} onChange={(e) => setStockLoan({ ...stockLoan, rate: safeNum(e.target.value) })} className="w-full bg-slate-950 p-1.5 rounded outline-none border border-transparent focus:border-blue-500" /></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                <h4 className="text-red-400 font-bold mb-3 text-xs uppercase tracking-wider flex items-center justify-between">
-                    房貸戰線設定
-                    <button onClick={() => setLoans((prev) => [...prev, { id: Date.now().toString(), name: '新房貸', principal: 0, rate1: 2.1, rate1Months: 36, rate2: 2.3, totalMonths: 360, paidMonths: 0, gracePeriod: 0, type: 'PrincipalAndInterest' }])} className="text-[10px] bg-red-900/30 text-red-400 px-2 py-1 rounded hover:bg-red-900/50 transition-colors flex items-center gap-1"><Plus size={10}/> 新增房貸</button>
-                </h4>
-                
-                <div className="space-y-3">
-                    {loans.map((l, i) => (
-                      <div key={l.id} className="bg-slate-900 p-3 rounded-lg border border-slate-800">
-                        <div className="flex gap-3 mb-2">
-                            <div className="w-1/3"><label className="text-slate-500 text-[9px] block mb-0.5">名稱</label><input type="text" value={l.name} onChange={(e) => updateLoan(i, 'name', e.target.value)} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
-                            <div className="flex-1"><label className="text-slate-500 text-[9px] block mb-0.5">本金</label><input type="number" value={l.principal} onChange={(e) => updateLoan(i, 'principal', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent font-mono" /></div>
-                            <div className="w-8 flex items-end justify-end"><button onClick={() => setLoans((prev) => prev.filter((x) => x.id !== l.id))} className="p-1.5 text-slate-600 hover:text-red-500 bg-slate-950 rounded mb-0.5"><Trash2 size={12}/></button></div>
-                        </div>
-                        <div className="grid grid-cols-4 gap-2 mb-2">
-                            <div><label className="text-slate-600 text-[8px] block mb-0.5">1段利率%</label><input type="number" step="0.001" value={l.rate1} onChange={(e) => updateLoan(i, 'rate1', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
-                            <div><label className="text-slate-600 text-[8px] block mb-0.5">1段月數</label><input type="number" value={l.rate1Months} onChange={(e) => updateLoan(i, 'rate1Months', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
-                            <div><label className="text-slate-600 text-[8px] block mb-0.5">2段利率%</label><input type="number" step="0.001" value={l.rate2} onChange={(e) => updateLoan(i, 'rate2', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
-                            <div><label className="text-slate-600 text-[8px] block mb-0.5">總期數</label><input type="number" value={l.totalMonths} onChange={(e) => updateLoan(i, 'totalMonths', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                            <div><label className="text-emerald-500/70 text-[8px] font-bold block mb-0.5">撥款日 (動態起算基準)</label><input type="date" value={l.startDate || ''} onChange={(e) => updateLoan(i, 'startDate', e.target.value)} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none border border-emerald-900/50 focus:border-emerald-500 text-slate-300" /></div>
-                            <div><label className="text-slate-600 text-[8px] block mb-0.5">寬限期(月)</label><input type="number" value={l.gracePeriod} onChange={(e) => updateLoan(i, 'gracePeriod', safeNum(e.target.value))} className="w-full bg-slate-950 p-1.5 rounded text-xs outline-none focus:border-red-500 border border-transparent" /></div>
-                            <div><label className="text-slate-600 text-[8px] block mb-0.5">已繳 (留白由系統算)</label><input type="number" disabled value={l.paidMonths} className="w-full bg-slate-950/50 p-1.5 rounded text-xs text-slate-600 cursor-not-allowed font-mono" /></div>
-                        </div>
-                      </div>
-                    ))}
-                    {loans.length === 0 && <div className="text-center py-4 text-xs text-slate-600 border border-dashed border-slate-800 rounded-lg">目前無房貸負擔</div>}
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-8 flex gap-3">
-                <button onClick={() => setShowSettings(false)} className="flex-1 py-3 bg-slate-800 text-slate-300 rounded-xl font-bold hover:bg-slate-700 transition-colors">取消 / 返回</button>
-                <button onClick={() => setShowSettings(false)} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black shadow-[0_0_15px_rgba(5,150,105,0.4)] hover:bg-emerald-500 transition-all transform hover:scale-[1.02]">儲存設定並同步</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                        <div className="flex-1"><label className="text-slate-500 text-[10px] block mb-1">信貸餘額</label><input type="number" value={creditLoan.principal} onChange={(e) => setCreditLoan({ ...creditLoan, principal
