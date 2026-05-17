@@ -28,10 +28,17 @@ interface TaxStatus { salaryIncome: number; livingExpenses: number; dependents: 
 interface AllocationConfig { totalFunds: number; dividendRatio: number; hedgingRatio: number; activeRatio: number; }
 interface CloudConfig { priceSourceUrl: string; enabled: boolean; }
 interface FixedExp { id: string; name: string; amount: number; }
-type MonthlyRecords = Record<string, { livingExpense?: number; otherIncome?: number; isTaxable?: boolean; }>;
+interface MonthlyRecord { livingExpense?: number; otherIncome?: number; isTaxable?: boolean; }
+type MonthlyRecords = Record<string, MonthlyRecord>;
+
+type PersistedPayload = {
+  etfs: ETF[]; loans: Loan[]; stockLoan: StockLoan; creditLoan: CreditLoan; globalMarginLoan: StockLoan;
+  taxStatus: TaxStatus; allocation: AllocationConfig; cloudConfig: CloudConfig; fixedExps: FixedExp[];
+  actualDetails: Record<string, number>; monthlyRecords?: MonthlyRecords; _meta?: { schema: number; updatedAt: number };
+};
 
 // --- Defaults ---
-const APP_SCHEMA_VERSION = 101; const LOCAL_KEY = 'baozutang_local';
+const APP_SCHEMA_VERSION = 102; const LOCAL_KEY = 'baozutang_local';
 const DEFAULT_STOCK_LOAN: StockLoan = { rate: 2.56, principal: 0 };
 const DEFAULT_GLOBAL_MARGIN: StockLoan = { rate: 4.5, principal: 0 };
 const DEFAULT_CREDIT: CreditLoan = { rate: 4.05, totalMonths: 84, principal: 0, paidMonths: 0 };
@@ -42,7 +49,7 @@ const BROKERAGE_RATE = 0.001425; const COLORS = { dividend: '#10b981', hedging: 
 
 const fmtTwd0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const formatMoney = (val: any) => `$${fmtTwd0.format(Math.round(Number(val) || 0))}`;
-const safeNum = (v: any) => Number.isFinite(Number(v)) ? Number(v) : 0;
+const safeNum = (v: any, fallback = 0): number => Number.isFinite(Number(v)) ? Number(v) : fallback;
 const toTime = (s: string) => { const t = new Date(s).getTime(); return Number.isFinite(t) ? t : NaN; };
 
 // --- Utils ---
@@ -75,6 +82,84 @@ const recalculateEtfStats = (etf: ETF): ETF => {
   return { ...etf, shares: Math.max(0, tShares), costPrice: tShares > 0 ? Number((tCost / tShares).toFixed(2)) : 0, marginLoanAmount: Math.max(0, tMargin) };
 };
 
+const generateCashFlow = (etfs: ETF[], loans: Loan[], stockLoan: StockLoan, creditLoan: CreditLoan, globalMarginLoan: StockLoan, taxStatus: TaxStatus, fixedExps: FixedExp[], actualDetails: Record<string,number>, monthlyRecords: MonthlyRecords, selectedYear: number) => {
+  const flows: any[] = [];
+  const annualSalaryForTax = safeNum(taxStatus.salaryIncome);
+  let annualDividendProjected = 0;
+
+  etfs.forEach(e => {
+    const yearEvents = e.schedule?.filter(ev => ev.year === selectedYear) || [];
+    if (yearEvents.length > 0) yearEvents.forEach(ev => annualDividendProjected += safeNum(e.shares) * ev.amount);
+    else annualDividendProjected += safeNum(e.shares) * safeNum(e.dividendPerShare) * (e.dividendType === 'annual' ? 1 : (e.payMonths?.length || 0));
+  });
+
+  let annualOtherTaxable = 0;
+  for (let m = 1; m <= 12; m++) {
+    const rec = monthlyRecords[`${selectedYear}_${m}`];
+    if (rec?.otherIncome && rec?.isTaxable) annualOtherTaxable += rec.otherIncome;
+  }
+
+  const annualIncomeTax = calculateIncomeTax(annualSalaryForTax, annualDividendProjected, annualOtherTaxable, taxStatus);
+  const monthlyIncomeTaxImpact = annualIncomeTax / 12;
+  const globalFixedOut = fixedExps.reduce((sum, f) => sum + safeNum(f.amount), 0);
+
+  for (let m = 1; m <= 12; m++) {
+    let divInProjected = 0; let divActualTotal = 0; const details: any[] = [];
+    etfs.forEach(e => {
+      let evs = e.schedule?.filter(ev => ev.year === selectedYear) || [];
+      if (evs.length > 0) {
+        evs.forEach(ev => {
+          if (parseInt(ev.payDate?.split('-')[1] || '0') === m) {
+            const exT = toTime(ev.exDate); let qualS = 0;
+            (e.lots||[]).forEach(l => { if (isNaN(exT) || toTime(l.date) < exT) qualS += (l.type==='sell'?-1:1)*Math.abs(l.shares); });
+            const proj = Math.floor(Math.max(0, qualS) * ev.amount); divInProjected += proj;
+            const act = safeNum(actualDetails[`${selectedYear}_${m}_${e.id}`]); divActualTotal += act;
+            details.push({ id: e.id, name: e.name, amt: proj, qualS: Math.max(0,qualS), totS: safeNum(e.shares), ex: ev.exDate||'未填', act });
+          }
+        });
+      } else if (e.payMonths?.includes(m)) {
+        const payout = safeNum(e.dividendPerShare) / (e.dividendType==='annual' && e.payMonths.length>0 ? e.payMonths.length : 1);
+        let qualS = 0; (e.lots||[]).forEach(l => { const ld = new Date(l.date); if(isNaN(ld.getTime()) || ld.getFullYear()<selectedYear || (ld.getFullYear()===selectedYear && ld.getMonth()+1<=m)) qualS += (l.type==='sell'?-1:1)*Math.abs(l.shares); });
+        const proj = Math.floor(Math.max(0,qualS) * payout); divInProjected += proj;
+        const act = safeNum(actualDetails[`${selectedYear}_${m}_${e.id}`]); divActualTotal += act;
+        details.push({ id: e.id, name: e.name, amt: proj, qualS: Math.max(0,qualS), totS: safeNum(e.shares), ex: '預估', act });
+      }
+    });
+
+    const healthTaxProjected = Math.floor(divInProjected * 0.0211);
+    const divUsed = divActualTotal > 0 ? divActualTotal : divInProjected - healthTaxProjected;
+
+    let loanOut = 0; loans.forEach(l => { const st = l.startDate ? new Date(l.startDate) : new Date(); const dyn = Math.max(0, safeNum(l.paidMonths) + (selectedYear - st.getFullYear())*12 + (m - (st.getMonth()+1))); loanOut += calculateLoanPayment(l, dyn); });
+    const dynCred = Math.max(0, safeNum(creditLoan.paidMonths) + (selectedYear - new Date().getFullYear())*12 + (m - (new Date().getMonth()+1)));
+    const cRate = safeNum(creditLoan.rate)/100/12; const credOut = cRate===0 ? 0 : (dynCred < safeNum(creditLoan.totalMonths) ? Math.floor((safeNum(creditLoan.principal)*cRate*Math.pow(1+cRate,safeNum(creditLoan.totalMonths)))/(Math.pow(1+cRate,safeNum(creditLoan.totalMonths))-1)) : 0);
+    let marginInt = 0; etfs.forEach(e => { let aMargin = 0; (e.lots||[]).forEach(l => { const ld = new Date(l.date); if(isNaN(ld.getTime()) || ld.getFullYear()<selectedYear || (ld.getFullYear()===selectedYear && ld.getMonth()+1<=m)) aMargin += (l.type==='sell'?-1:1)*Math.abs(l.margin||0); }); marginInt += Math.max(0,aMargin) * (safeNum(e.marginInterestRate,6.5)/100)/12; });
+    const stockIntTotal = Math.floor((safeNum(stockLoan.principal)*safeNum(stockLoan.rate)/100)/12) + Math.floor((safeNum(globalMarginLoan.principal)*safeNum(globalMarginLoan.rate)/100)/12) + Math.floor(marginInt);
+    
+    const rec = monthlyRecords[`${selectedYear}_${m}`] || {}; const life = rec.livingExpense !== undefined ? safeNum(rec.livingExpense) : safeNum(taxStatus.livingExpenses);
+    const healthTaxReal = divActualTotal > 0 ? 0 : healthTaxProjected;
+
+    flows.push({ month: m, otherInc: safeNum(rec.otherIncome), divProjected: divInProjected, divActualTotal, loanOut, creditOut: credOut, stockInt: stockIntTotal, fixedOut: globalFixedOut, life, isActualLife: rec.livingExpense!==undefined, budgetLife: safeNum(taxStatus.livingExpenses), healthTax: healthTaxReal, incomeTax: monthlyIncomeTaxImpact, net: divUsed + safeNum(rec.otherIncome) - loanOut - credOut - stockIntTotal - globalFixedOut - life - healthTaxReal - monthlyIncomeTaxImpact, details });
+  }
+  return flows;
+};
+
+const sanitizePayload = (d: any): PersistedPayload => {
+  const etfs: ETF[] = Array.isArray(d?.etfs) && d.etfs.length > 0 ? d.etfs : [];
+  const cleanedEtfs = etfs.map((e: any) => ({
+    ...e, dividendType: e?.dividendType || 'per_period', payMonths: Array.isArray(e?.payMonths) ? e.payMonths : [],
+    schedule: (Array.isArray(e?.schedule) ? e.schedule : []).map((ev: any) => ({ ...ev, year: ev.year || (ev.payDate ? parseInt(ev.payDate.split('-')[0], 10) : 2026) || 2026 })),
+    lots: Array.isArray(e?.lots) ? e.lots : []
+  }));
+  const oldActuals = d?.actualDetails || d?.actuals || {};
+  const newActuals: Record<string,number> = {};
+  Object.keys(oldActuals).forEach(k => { if (k.split('_').length === 2) { newActuals[`2026_${k}`] = oldActuals[k]; } else { newActuals[k] = oldActuals[k]; } });
+  
+  return { 
+      etfs: cleanedEtfs, loans: Array.isArray(d?.loans) ? d.loans : [], stockLoan: d?.stockLoan || DEFAULT_STOCK_LOAN, creditLoan: d?.creditLoan || DEFAULT_CREDIT, globalMarginLoan: d?.globalMarginLoan || DEFAULT_GLOBAL_MARGIN, 
+      taxStatus: { ...DEFAULT_TAX, ...(d?.taxStatus || {}) }, allocation: d?.allocation || DEFAULT_ALLOC, cloudConfig: d?.cloudConfig || DEFAULT_CLOUD, fixedExps: Array.isArray(d?.fixedExps) ? d.fixedExps : [], actualDetails: newActuals, monthlyRecords: d?.monthlyRecords || {}, _meta: d?._meta 
+  };
+};
+
 const StorageService = {
   saveData: async (data: any) => {
     const payload = { ...data, _meta: { schema: APP_SCHEMA_VERSION, updatedAt: Date.now() } };
@@ -89,9 +174,7 @@ const StorageService = {
     if (db) { try { const snap = await getDoc(doc(db, COLLECTION_NAME, DOCUMENT_ID)); cloud = snap.exists() ? snap.data() : null; } catch (e) {} }
     const picked = (safeNum(cloud?._meta?.updatedAt) >= safeNum(local?._meta?.updatedAt) ? cloud : local) || null;
     if (!picked) return { data: null, source: 'none' };
-    picked.etfs = (picked.etfs || []).map((e:any)=>({...e, schedule: (e.schedule||[]).map((ev:any)=>({...ev, year: ev.year || parseInt(ev.payDate?.split('-')[0]||'2026')}))}));
-    picked.fixedExps = Array.isArray(picked.fixedExps) ? picked.fixedExps : [];
-    return { data: picked, source: picked === cloud ? 'cloud' : 'local' };
+    return { data: sanitizePayload(picked), source: picked === cloud ? 'cloud' : 'local' };
   },
   exportToFile: (data: any) => {
     const payload = { ...data, _meta: { schema: APP_SCHEMA_VERSION, updatedAt: Date.now() } };
@@ -132,6 +215,7 @@ export default function App() {
   const [txForm, setTxForm] = useState({ type: 'buy', shares: '', price: '', date: '', margin: '' });
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
   const [showCalendar, setShowCalendar] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogin = () => {
@@ -168,58 +252,55 @@ export default function App() {
     return () => clearTimeout(t);
   }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, fixedExps, actualDetails, monthlyRecords, isInitializing, isAuthenticated]);
 
-  const monthlyFlows = useMemo(() => {
-    const flows = [];
-    let annualDivProj = 0;
-    etfs.forEach(e => { const evs = e.schedule?.filter(ev => ev.year === selectedYear) || []; if (evs.length > 0) evs.forEach(ev => annualDivProj += safeNum(e.shares) * ev.amount); else annualDivProj += safeNum(e.shares) * safeNum(e.dividendPerShare) * (e.dividendType === 'annual' ? 1 : (e.payMonths?.length || 0)); });
-    let annualOtherTaxable = Array.from({length:12}).reduce((acc:number,_,i) => acc + (monthlyRecords[`${selectedYear}_${i+1}`]?.isTaxable ? safeNum(monthlyRecords[`${selectedYear}_${i+1}`]?.otherIncome) : 0), 0);
-    const monthlyIncomeTaxImpact = calculateIncomeTax(safeNum(taxStatus.salaryIncome), annualDivProj, annualOtherTaxable, taxStatus) / 12;
-    const globalFixedOut = fixedExps.reduce((sum, f) => sum + safeNum(f.amount), 0);
+  const monthlyFlows = useMemo(() => generateCashFlow(etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, fixedExps, actualDetails, monthlyRecords, selectedYear), [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, fixedExps, actualDetails, monthlyRecords, selectedYear]);
 
-    for (let m = 1; m <= 12; m++) {
-      let [divProj, divActual] = [0, 0]; const details: any[] = [];
-      etfs.forEach(e => {
-        let evs = e.schedule?.filter(ev => ev.year === selectedYear) || [];
-        if (evs.length > 0) {
-          evs.forEach(ev => {
-            if (parseInt(ev.payDate?.split('-')[1] || '0') === m) {
-              const exT = new Date(ev.exDate).getTime(); let qualS = 0;
-              (e.lots||[]).forEach(l => { if (isNaN(exT) || new Date(l.date).getTime() < exT) qualS += (l.type==='sell'?-1:1)*Math.abs(l.shares); });
-              const proj = Math.floor(Math.max(0, qualS) * ev.amount); divProj += proj;
-              const act = safeNum(actualDetails[`${selectedYear}_${m}_${e.id}`]); divActual += act;
-              details.push({ id: e.id, name: e.name, amt: proj, qualS: Math.max(0,qualS), totS: safeNum(e.shares), ex: ev.exDate||'未填', act });
-            }
-          });
-        } else if (e.payMonths?.includes(m)) {
-          const payout = safeNum(e.dividendPerShare) / (e.dividendType==='annual' && e.payMonths.length>0 ? e.payMonths.length : 1);
-          let qualS = 0; (e.lots||[]).forEach(l => { const ld = new Date(l.date); if(isNaN(ld.getTime()) || ld.getFullYear()<selectedYear || (ld.getFullYear()===selectedYear && ld.getMonth()+1<=m)) qualS += (l.type==='sell'?-1:1)*Math.abs(l.shares); });
-          const proj = Math.floor(Math.max(0,qualS) * payout); divProj += proj;
-          const act = safeNum(actualDetails[`${selectedYear}_${m}_${e.id}`]); divActual += act;
-          details.push({ id: e.id, name: e.name, amt: proj, qualS: Math.max(0,qualS), totS: safeNum(e.shares), ex: '預估', act });
-        }
-      });
-      const healthTax = Math.floor(divProj * 0.0211);
-      let loanOut = 0; loans.forEach(l => { const st = l.startDate ? new Date(l.startDate) : new Date(); const dyn = Math.max(0, safeNum(l.paidMonths) + (selectedYear - st.getFullYear())*12 + (m - (st.getMonth()+1))); loanOut += calculateLoanPayment(l, dyn); });
-      const dynCred = Math.max(0, safeNum(creditLoan.paidMonths) + (selectedYear - new Date().getFullYear())*12 + (m - (new Date().getMonth()+1)));
-      const cRate = safeNum(creditLoan.rate)/100/12; const credOut = cRate===0 ? 0 : (dynCred < safeNum(creditLoan.totalMonths) ? Math.floor((safeNum(creditLoan.principal)*cRate*Math.pow(1+cRate,safeNum(creditLoan.totalMonths)))/(Math.pow(1+cRate,safeNum(creditLoan.totalMonths))-1)) : 0);
-      let marginInt = 0; etfs.forEach(e => { let aMargin = 0; (e.lots||[]).forEach(l => { const ld = new Date(l.date); if(isNaN(ld.getTime()) || ld.getFullYear()<selectedYear || (ld.getFullYear()===selectedYear && ld.getMonth()+1<=m)) aMargin += (l.type==='sell'?-1:1)*Math.abs(l.margin||0); }); marginInt += Math.max(0,aMargin) * (safeNum(e.marginInterestRate,6.5)/100)/12; });
-      const stockIntTotal = Math.floor((safeNum(stockLoan.principal)*safeNum(stockLoan.rate)/100)/12) + Math.floor((safeNum(globalMarginLoan.principal)*safeNum(globalMarginLoan.rate)/100)/12) + Math.floor(marginInt);
-      const rec = monthlyRecords[`${selectedYear}_${m}`] || {}; const life = rec.livingExpense !== undefined ? safeNum(rec.livingExpense) : safeNum(taxStatus.livingExpenses);
-      flows.push({ month: m, otherInc: safeNum(rec.otherIncome), divProj, divActual, loanOut, creditOut: credOut, stockInt: stockIntTotal, fixedOut: globalFixedOut, life, isActualLife: rec.livingExpense!==undefined, budgetLife: safeNum(taxStatus.livingExpenses), healthTax: divActual>0?0:healthTax, incomeTax: monthlyIncomeTaxImpact, net: (divActual>0?divActual:divProj-healthTax) + safeNum(rec.otherIncome) - loanOut - credOut - stockIntTotal - globalFixedOut - life - (divActual>0?0:healthTax) - monthlyIncomeTaxImpact, details });
-    }
-    return flows;
-  }, [etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, fixedExps, actualDetails, monthlyRecords, selectedYear]);
+  // UI Variables Definitions (Properly Scoped)
+  const totalDividend = monthlyFlows.reduce((a, b) => a + (b.divActualTotal > 0 ? b.divActualTotal : b.divProjected * 0.9789), 0);
+  const totalOtherIncome = monthlyFlows.reduce((a, b) => a + safeNum(b.otherInc), 0);
+  const totalOut = monthlyFlows.reduce((a, b) => a + b.loanOut + b.creditOut + b.stockInt + safeNum(b.fixedOut) + b.life + b.healthTax + b.incomeTax, 0);
+  const totalNet = totalDividend + totalOtherIncome - totalOut;
 
-  // UI Variables mapped exactly for Vercel TS checks
-  const tDiv = monthlyFlows.reduce((a, b) => a + (b.divActual > 0 ? b.divActual : b.divProj * 0.9789), 0);
-  const tOut = monthlyFlows.reduce((a, b) => a + b.loanOut + b.creditOut + b.stockInt + (b.fixedOut || 0) + b.life + b.healthTax + b.incomeTax, 0);
-  const tNet = tDiv + monthlyFlows.reduce((a, b) => a + safeNum(b.otherInc), 0) - tOut;
-  const tVal = etfs.reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice), 0);
-  const tDebt = safeNum(stockLoan.principal) + safeNum(globalMarginLoan.principal) + etfs.reduce((a, e) => a + safeNum(e.marginLoanAmount), 0);
-  const maint = tDebt === 0 ? 999 : (tVal / tDebt) * 100;
-  const fRatio = tOut > 0 ? (tDiv / tOut) * 100 : 0;
-  const rank = fRatio>=100?'財富神祇 🌟':fRatio>=60?'財富國王 👑':fRatio>=30?'資產領主 🏰':fRatio>=10?'築基騎士 ⚔️':'理財新手 🌱';
-  const grade = fRatio>=80&&maint>=160&&tNet>0?'SSS':fRatio>=50&&maint>=140?'S':fRatio>=30&&maint>=130?'A':fRatio>=10?'B':'C';
+  const totalValue = etfs.reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice), 0);
+  const totalStockDebt = safeNum(stockLoan.principal) + safeNum(globalMarginLoan.principal) + etfs.reduce((a, e) => a + safeNum(e.marginLoanAmount), 0);
+  const currentMaintenance = totalStockDebt === 0 ? 999 : (totalValue / totalStockDebt) * 100;
+
+  const actualDiv = etfs.filter((e) => e.category === 'dividend').reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice) - safeNum(e.marginLoanAmount), 0);
+  const actualHedge = etfs.filter((e) => e.category === 'hedging').reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice) - safeNum(e.marginLoanAmount), 0);
+  const actualAct = etfs.filter((e) => e.category === 'active').reduce((a, e) => a + safeNum(e.shares) * safeNum(e.currentPrice) - safeNum(e.marginLoanAmount), 0);
+
+  const combatPower = Math.floor(totalValue / 10000 + totalDividend / 12 / 100);
+  const fireRatio = totalOut > 0 ? (totalDividend / totalOut) * 100 : 0;
+
+  const { currentRank, nextRank, progress, healthGrade, earnedAchievements, avatar, combatLogs } = useMemo(() => {
+    let cRank = '理財新手 🌱'; let nRank = '築基騎士 ⚔️'; let prog = 0; let av = '🧑‍🌾';
+    if (fireRatio >= 100) { cRank = '財富神祇 🌟'; nRank = 'MAX'; prog = 100; av = '👑'; }
+    else if (fireRatio >= 60) { cRank = '財富國王 👑'; nRank = '財富神祇 🌟'; prog = ((fireRatio - 60) / 40) * 100; av = '🤴'; }
+    else if (fireRatio >= 30) { cRank = '資產領主 🏰'; nRank = '財富國王 👑'; prog = ((fireRatio - 30) / 30) * 100; av = '🧙‍♂️'; }
+    else if (fireRatio >= 10) { cRank = '築基騎士 ⚔️'; nRank = '資產領主 🏰'; prog = ((fireRatio - 10) / 20) * 100; av = '🤺'; }
+    else { prog = (fireRatio / 10) * 100; av = '🧑‍🌾'; }
+
+    let grade = 'C';
+    if (fireRatio >= 80 && currentMaintenance >= 160 && totalNet > 0) grade = 'SSS';
+    else if (fireRatio >= 50 && currentMaintenance >= 140) grade = 'S';
+    else if (fireRatio >= 30 && currentMaintenance >= 130) grade = 'A';
+    else if (fireRatio >= 10) grade = 'B';
+
+    const ach = [];
+    if (totalValue >= 20000000) ach.push({ icon: '💎', title: '兩千萬霸主', desc: '總資產突破兩千萬', rarity: 'UR', glow: 'shadow-[0_0_15px_rgba(236,72,153,0.6)] border-pink-500 text-pink-400 bg-pink-900/20' });
+    else if (totalValue >= 10000000) ach.push({ icon: '💰', title: '千萬俱樂部', desc: '總資產突破一千萬', rarity: 'SSR', glow: 'shadow-[0_0_15px_rgba(234,179,8,0.6)] border-yellow-500 text-yellow-400 bg-yellow-900/20' });
+    if (totalDividend / 12 >= 100000) ach.push({ icon: '🔥', title: '月入十萬', desc: '平均月被動收入達十萬', rarity: 'UR', glow: 'shadow-[0_0_15px_rgba(249,115,22,0.6)] border-orange-500 text-orange-400 bg-orange-900/20' });
+    if (currentMaintenance >= 200 || currentMaintenance === 999) ach.push({ icon: '🛡️', title: '無敵鐵壁', desc: '維持率極度安全', rarity: 'SR', glow: 'border-blue-500 text-blue-400 bg-blue-900/20' });
+    if (totalOut > 0 && totalNet > 0) ach.push({ icon: '📈', title: '正向循環', desc: '淨現金流為正數', rarity: 'R', glow: 'border-emerald-500 text-emerald-400 bg-emerald-900/20' });
+
+    const logs = [
+        `[系統] 玩家登入，當前總戰力 ${combatPower.toLocaleString()}。`,
+        totalNet > 0 ? `[被動技] 資產護盾發動！淨回血 ${formatMoney(totalNet/12)}/月。` : `[警告] 現金流失血中，注意防禦！`,
+        `[裝備] 持有 ${etfs.length} 件神兵利器持續產出金幣。`,
+        currentMaintenance < 140 ? `[Debuff] 維持率過低，防禦力下降！` : `[Buff] 維持率穩健，防禦力堅不可摧。`
+    ];
+
+    return { currentRank: cRank, nextRank: nRank, progress: Math.min(100, Math.max(0, prog)), healthGrade: grade, earnedAchievements: ach, avatar: av, combatLogs: logs };
+  }, [fireRatio, totalValue, totalDividend, currentMaintenance, totalNet, etfs.length, combatPower]);
 
   const upcomingEvents = useMemo(() => {
     const today = new Date(); today.setHours(0,0,0,0); const evs:any[] = [];
@@ -319,15 +400,15 @@ export default function App() {
       
       <header className="mb-6 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-black text-emerald-400 flex items-center gap-2 drop-shadow-md"><Calculator/> 包租唐戰情室 V101</h1>
+          <h1 className="text-3xl font-black text-emerald-400 flex items-center gap-2 drop-shadow-md"><Calculator/> 包租唐戰情室 V102</h1>
           <div className="text-xs mt-2 text-slate-500 flex gap-2"><span className="bg-slate-800 px-2 py-1 rounded-full text-emerald-500 font-bold">{saveStatus==='saving'?'儲存中...':saveStatus==='saved'?'已同步':dataSrc}</span></div>
         </div>
         <div className="flex gap-2">
           <button onClick={handleUpdatePrices} className="p-2 bg-slate-800 rounded-lg text-emerald-400 hover:bg-slate-700 transition-colors shadow-md" title="更新報價"><RefreshCw size={18} className={isUpdatingPrices?"animate-spin":""}/></button>
           <button onClick={()=>setShowSettings(true)} className="p-2 bg-slate-800 rounded-lg text-slate-300 hover:bg-slate-700 transition-colors shadow-md" title="系統設定"><Settings size={18}/></button>
           <input type="file" ref={fileInputRef} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => { try { const raw = JSON.parse(ev.target?.result as string); const d = sanitizePayload(raw); setEtfs(d.etfs); setLoans(d.loans || []); setStockLoan(d.stockLoan || DEFAULT_STOCK_LOAN); setGlobalMarginLoan(d.globalMarginLoan || DEFAULT_GLOBAL_MARGIN); setCreditLoan(d.creditLoan || DEFAULT_CREDIT); setTaxStatus(d.taxStatus || DEFAULT_TAX); setAllocation(d.allocation || DEFAULT_ALLOC); setCloudConfig(d.cloudConfig || DEFAULT_CLOUD); setFixedExps(d.fixedExps || []); setActualDetails(d.actualDetails || {}); setMonthlyRecords(d.monthlyRecords || {}); alert('匯入成功！'); } catch (err) { alert('格式錯誤'); } }; r.readAsText(f); }} className="hidden" accept=".json" />
-          <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-slate-800 rounded-lg text-blue-400 hover:bg-slate-700 transition-colors shadow-md"><Upload size={18} /></button>
-          <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, fixedExps, actualDetails, monthlyRecords })} className="p-2 bg-slate-800 rounded-lg text-amber-400 hover:bg-slate-700 transition-colors shadow-md"><Download size={18} /></button>
+          <button onClick={() => fileInputRef.current?.click()} className="p-2 bg-slate-800 rounded-lg text-blue-400 hover:bg-slate-700 transition-colors shadow-md" title="匯入存檔"><Upload size={18} /></button>
+          <button onClick={() => StorageService.exportToFile({ etfs, loans, stockLoan, creditLoan, globalMarginLoan, taxStatus, allocation, cloudConfig, fixedExps, actualDetails, monthlyRecords })} className="p-2 bg-slate-800 rounded-lg text-amber-400 hover:bg-slate-700 transition-colors shadow-md" title="匯出備份"><Download size={18} /></button>
           <button onClick={handleLogout} className="p-2 bg-slate-800 rounded-lg text-red-400 hover:bg-slate-700 transition-colors shadow-md ml-2" title="上鎖登出"><LogOut size={18} /></button>
         </div>
       </header>
@@ -345,14 +426,14 @@ export default function App() {
           <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl bg-gradient-to-br from-emerald-500/10 to-cyan-500/10">
             <div className="flex items-center gap-4 mb-6">
               <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center text-3xl border border-slate-700 shadow-inner">🧑‍🌾</div>
-              <div className="flex-1"><div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">主線任務：FIRE <Target size={10}/></div><div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">{rank}</div></div>
-              <div className="text-right"><div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">評級</div><div className="text-4xl font-black text-yellow-400 italic drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]">{grade}</div></div>
+              <div className="flex-1"><div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">主線任務：FIRE <Target size={10}/></div><div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400">{currentRank}</div></div>
+              <div className="text-right"><div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">評級</div><div className="text-4xl font-black text-yellow-400 italic drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]">{healthGrade}</div></div>
             </div>
             <div className="grid grid-cols-4 gap-2 text-center bg-slate-950 p-3 rounded-xl border border-slate-800 shadow-inner">
-              <div><div className="text-[9px] text-slate-500 font-bold mb-1">攻擊力(年息)</div><div className="font-mono font-bold text-emerald-400 text-sm">{formatMoney(tDiv)}</div></div>
-              <div><div className="text-[9px] text-slate-500 font-bold mb-1">防禦力(維持)</div><div className={`font-bold text-sm ${maint < 140 ? 'text-red-500 animate-pulse' : 'text-blue-400'}`}>{maint===999?'MAX':maint.toFixed(0)+'%'}</div></div>
-              <div><div className="text-[9px] text-slate-500 font-bold mb-1">回血(月淨流)</div><div className={`font-mono font-bold text-sm ${tNet >= 0 ? 'text-emerald-400' : 'text-red-500 animate-pulse'}`}>{formatMoney(tNet/12)}</div></div>
-              <div><div className="text-[9px] text-slate-500 font-bold mb-1">日產金率</div><div className="font-mono font-bold text-yellow-400 text-sm">{formatMoney(tDiv/365)}</div></div>
+              <div><div className="text-[9px] text-slate-500 font-bold mb-1">攻擊力(年息)</div><div className="font-mono font-bold text-emerald-400 text-sm">{formatMoney(totalDividend)}</div></div>
+              <div><div className="text-[9px] text-slate-500 font-bold mb-1">防禦力(維持)</div><div className={`font-bold text-sm ${currentMaintenance < 140 ? 'text-red-500 animate-pulse' : 'text-blue-400'}`}>{currentMaintenance===999?'MAX':currentMaintenance.toFixed(0)+'%'}</div></div>
+              <div><div className="text-[9px] text-slate-500 font-bold mb-1">回血(月淨流)</div><div className={`font-mono font-bold text-sm ${totalNet >= 0 ? 'text-emerald-400' : 'text-red-500 animate-pulse'}`}>{formatMoney(totalNet/12)}</div></div>
+              <div><div className="text-[9px] text-slate-500 font-bold mb-1">日產金率</div><div className="font-mono font-bold text-yellow-400 text-sm">{formatMoney(totalDividend/365)}</div></div>
             </div>
           </div>
 
@@ -464,22 +545,22 @@ export default function App() {
             <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-emerald-500 shadow-lg relative overflow-hidden group">
               <div className="absolute -right-4 -bottom-4 text-emerald-500/10 group-hover:scale-110 transition-transform duration-500"><Wallet size={80}/></div>
               <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1">年度淨流</div>
-              <div className={`text-2xl font-black font-mono relative z-10 ${tNet>=0?'text-emerald-400':'text-red-400'}`}>{formatMoney(tNet)}</div>
+              <div className={`text-2xl font-black font-mono relative z-10 ${totalNet>=0?'text-emerald-400':'text-red-400'}`}>{formatMoney(totalNet)}</div>
             </div>
             <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-blue-500 shadow-lg relative overflow-hidden group">
               <div className="absolute -right-4 -bottom-4 text-blue-500/10 group-hover:scale-110 transition-transform duration-500"><Crown size={80}/></div>
               <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1">總資產</div>
-              <div className="text-2xl font-black font-mono text-slate-100 relative z-10">{formatMoney(tVal)}</div>
+              <div className="text-2xl font-black font-mono text-slate-100 relative z-10">{formatMoney(totalValue)}</div>
             </div>
             <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-red-500 shadow-lg relative overflow-hidden group">
               <div className="absolute -right-4 -bottom-4 text-red-500/10 group-hover:scale-110 transition-transform duration-500"><AlertTriangle size={80}/></div>
               <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1">總負債</div>
-              <div className="text-2xl font-black font-mono text-slate-100 relative z-10">{formatMoney(tDebt)}</div>
+              <div className="text-2xl font-black font-mono text-slate-100 relative z-10">{formatMoney(totalStockDebt)}</div>
             </div>
             <div className="bg-slate-900 p-4 rounded-2xl border-l-4 border-orange-500 shadow-lg relative overflow-hidden group">
               <div className="absolute -right-4 -bottom-4 text-orange-500/10 group-hover:scale-110 transition-transform duration-500"><ShieldCheck size={80}/></div>
               <div className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1">股息 Cover率</div>
-              <div className="text-2xl font-black font-mono text-orange-400 relative z-10">{tOut>0?((tDiv/tOut)*100).toFixed(1):0}%</div>
+              <div className="text-2xl font-black font-mono text-orange-400 relative z-10">{totalOut>0?((totalDividend/totalOut)*100).toFixed(1):0}%</div>
             </div>
           </div>
 
